@@ -104,7 +104,17 @@ endif()
 set(NEO_MV_FFT_OBJECTS)
 foreach(target ${NEO_MV_FFT_TARGETS})
   add_library(neo_mv_fft_${target} OBJECT src/core/depan/estimate_fft_backend.cpp)
-  target_link_libraries(neo_mv_fft_${target} PRIVATE neo_mv_core)
+  target_compile_features(neo_mv_fft_${target} PRIVATE cxx_std_17)
+  target_include_directories(neo_mv_fft_${target} PRIVATE src)
+  # FFT backends choose their own FP policy; the core's strict usage
+  # requirements would override the AVX2/AVX512 contraction settings.
+  if(NOT target MATCHES "^(avx2|avx512)$")
+    if(MSVC)
+      target_compile_options(neo_mv_fft_${target} PRIVATE /fp:strict)
+    else()
+      target_compile_options(neo_mv_fft_${target} PRIVATE -fno-fast-math -ffp-contract=off)
+    endif()
+  endif()
   target_include_directories(neo_mv_fft_${target} SYSTEM PRIVATE "${pocketfft_SOURCE_DIR}")
   set_target_properties(neo_mv_fft_${target} PROPERTIES POSITION_INDEPENDENT_CODE ON
     CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
