@@ -9,7 +9,7 @@ inline float rounded(double x) {
   if (std::isnan(x))
     return std::numeric_limits<float>::quiet_NaN();
   if (std::abs(x) >= 0x1.ffffffp127)
-    return std::copysign(std::numeric_limits<float>::infinity(), x);
+    return static_cast<float>(std::copysign(std::numeric_limits<float>::infinity(), x));
   return f32(x);
 }
 inline float add(float a, float b) {
