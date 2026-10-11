@@ -181,7 +181,7 @@ void row_cache() {
           } else {
             const auto u = grid_detail::coefficient(ax.remainder, ax.denominator);
             const auto v = grid_detail::coefficient(ay.remainder, ay.denominator);
-            const auto mix = [](double a, double b, unsigned w) {
+            const auto mix = [](auto a, auto b, unsigned w) {
               return (std::uint64_t(a) * (16384 - w) + std::uint64_t(b) * w + 8192) >> 14;
             };
             expected = static_cast<T>(

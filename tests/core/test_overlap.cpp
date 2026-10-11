@@ -150,8 +150,8 @@ void examples_and_errors() {
   compose_render_blocks(plan, blocks.views, output.view(), 8);
   CHECK(output.view().row(0)[3] == 16);
   Blocks<float> floats(2, 4, 4);
-  std::fill(floats.data[0].begin(), floats.data[0].end(), 10);
-  std::fill(floats.data[1].begin(), floats.data[1].end(), 21);
+  std::fill(floats.data[0].begin(), floats.data[0].end(), 10.0f);
+  std::fill(floats.data[1].begin(), floats.data[1].end(), 21.0f);
   super_detail::PlaneBuffer<float> out_float(7, 4);
   compose_render_blocks(plan, floats.views, out_float.view(), 32);
   CHECK(out_float.view().row(0)[3] == 15.5f);

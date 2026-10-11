@@ -147,14 +147,14 @@ void combination() {
 }
 void temporal() {
   BasicMotion m{1,0,1,5,true};
-  auto out = temporal_motion(m,20,std::nullopt,4);
+  auto out = temporal_motion(m,20.0f,std::nullopt,4);
   CHECK(!out.good && out.dx == 0 && out.dy == 0 && out.rotation == 0 && out.zoom == 1);
   CHECK(!std::signbit(out.dx) && !std::signbit(out.dy) && !std::signbit(out.rotation));
-  CHECK(temporal_motion(m,10,std::nullopt,4).good);
-  CHECK(temporal_motion(m,0,std::nullopt,4).good);
-  CHECK(!temporal_motion(m,0,20,4).good);
+  CHECK(temporal_motion(m,10.0f,std::nullopt,4).good);
+  CHECK(temporal_motion(m,0.0f,std::nullopt,4).good);
+  CHECK(!temporal_motion(m,0.0f,20.0f,4).good);
   m.confidence = 8;
-  CHECK(temporal_motion(m,100,100,4).good);
+  CHECK(temporal_motion(m,100.0f,100.0f,4).good);
   CHECK(m.confidence == 8);
   CHECK(required_basic_indices(2,5) == std::vector<int>({1,2,3}));
   CHECK(required_source_indices(2,5) == std::vector<int>({0,1,2,3}));

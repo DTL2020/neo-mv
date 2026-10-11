@@ -94,7 +94,7 @@ void examples(FftProfile profile) {
   for (int i = 0; i < 16; ++i) CHECK(c[i] == (i == 1 ? 160 : 0));
   const auto reversed = plan.correlate(b, a);
   CHECK(reversed[3] == 160);
-  std::fill(a.begin(), a.end(), 2);
+  std::fill(a.begin(), a.end(), 2.0f);
   for (float value : plan.correlate(a, a)) CHECK(value == 1024);
   FftPlan odd(4, 3, profile);
   a.assign(12, 0); a[0] = 1;
@@ -189,7 +189,7 @@ void large_roundtrips(FftProfile profile) {
     CHECK(std::memcmp(saved.data(), spectrum.data(), spectrum.size() * sizeof(spectrum[0])) == 0);
     for (std::size_t i = 0; i < input.size(); ++i) {
       close(float(double(restored[i]) / input.size()), input[i], 1);
-      close(restored[i], reference[i], input.size());
+      close(restored[i], reference[i], static_cast<long double>(input.size()));
     }
   }
 }

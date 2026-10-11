@@ -194,7 +194,9 @@ void admission_oracle() {
               }
               bool accepted = true;
               try {
-                TestPlan(g, 1, 1, precision, time).preflight(field(1, 1, vx, vy), field(1, 1, -vx, -vy));
+                TestPlan(g, 1, 1, precision, time)
+                    .preflight(field(1, 1, static_cast<std::int16_t>(vx), static_cast<std::int16_t>(vy)),
+                               field(1, 1, static_cast<std::int16_t>(-vx), static_cast<std::int16_t>(-vy)));
               } catch (const std::invalid_argument&) {
                 accepted = false;
               }
