@@ -222,7 +222,7 @@ public:
             output.row(y)[x] = static_cast<T>(int(grid_detail::interpolate(top[x], bottom[x], a.weight)) - offset);
         }
       }
-    } else {
+    } else if constexpr (!std::is_same_v<T, float>) {
       // Preserve vertical-first Q14 rounding before expanding the small row.
       OverwriteVector<Value> row(g.blocks_x);
       for (int y = 0; y < g.height; ++y) {
