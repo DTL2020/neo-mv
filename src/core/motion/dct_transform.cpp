@@ -12,7 +12,7 @@ namespace neo_mv::dct_detail {
 namespace HWY_NAMESPACE {
 namespace hn = hwy::HWY_NAMESPACE;
 struct VectorOps {
-  const hn::CappedTag<float, 8> d;
+  const hn::CappedTag<float, 8> d{};
   int lanes() const { return int(hn::Lanes(d)); }
   using V = hn::VFromD<decltype(d)>;
   V load(const float* p) const { return hn::LoadU(d, p); }
