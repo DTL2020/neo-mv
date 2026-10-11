@@ -183,7 +183,7 @@ void add_depan(IScriptEnvironment* env) {
 #define NEO_MV_AVS_EXPORT extern "C" __attribute__((visibility("default")))
 #endif
 
-NEO_MV_AVS_EXPORT const char* __stdcall AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* linkage) {
+NEO_MV_AVS_EXPORT const char* __stdcall AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* linkage) noexcept(false) {
   AVS_linkage = linkage;
   using namespace neo_mv::ds2;
   using namespace neo_mv::ds2::avs;
