@@ -67,7 +67,7 @@ vectors = neo_mv_AnalyseMany(super_clip, radius=1)
 return neo_mv_Degrain1(clip, super_clip, vectors)
 ```
 
-函数名和参数顺序对应 API 使用参考，函数名前加 `neo_mv_`。数组参数接受 `[16, 8]` 这样的原生数组，单值可作为一个元素的简写。`AnalyseMany` 和 `Recalculate` 返回剪辑数组，单个 Recalculate 输入也返回一个元素的数组。`neo_mv_KernelInfo()` 返回 `[backend, target, fft, fft_lanes]`。布尔参数使用 `true`/`false`。音频和场序从第一个输入剪辑传递；场模式计算使用 `_Field` 属性或显式 `tff`。Depan 的 `info=true` 使用 AviSynth 的 `propShow` 绘制诊断属性。
+函数名和参数顺序对应 API 使用参考，函数名前加 `neo_mv_`。数组参数接受 `[16, 8]` 这样的原生数组，单值可作为一个元素的简写。`AnalyseMany` 返回剪辑数组。`Recalculate` 的单剪辑输入返回单剪辑，显式数组输入保留数组形态，包括 `[clip]`。`neo_mv_KernelInfo()` 返回 `[backend, target, fft, fft_lanes]`。布尔参数使用 `true`/`false`。音频和场序从第一个输入剪辑传递；场模式计算使用 `_Field` 属性或显式 `tff`。Depan 的 `info=true` 使用 AviSynth 的 `propShow` 绘制诊断属性。
 
 ## SIMD 与 CPU 选择
 

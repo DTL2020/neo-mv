@@ -117,8 +117,9 @@ ds::FilterDescriptor recalculate_descriptor() {
 AVSValue __cdecl recalculate(AVSValue args, void*, IScriptEnvironment* env) {
   return guarded(env, [&] {
     const auto d = recalculate_descriptor();
-    Call call(args, d);
     const auto slot = index(d, "vectors");
+    const bool single = args[static_cast<int>(slot)].IsClip();
+    Call call(args, d);
     const auto vectors = call.values[slot];
     require(vectors.IsArray() && vectors.ArraySize() > 0, "Recalculate requires nonempty vectors");
     std::vector<std::vector<AVSValue>> members;
@@ -130,7 +131,9 @@ AVSValue __cdecl recalculate(AVSValue args, void*, IScriptEnvironment* env) {
       members.back()[slot] = vectors[i];
       calls.push_back(AVSValue(members.back().data(), static_cast<int>(members.back().size())));
     }
-    return av::create_video_filter_bundle<Adapter<Bridge<Operation::Recalculate>>>({calls.data(), calls.size()}, env);
+    const auto result =
+        av::create_video_filter_bundle<Adapter<Bridge<Operation::Recalculate>>>({calls.data(), calls.size()}, env);
+    return single ? result[0] : result;
   });
 }
 

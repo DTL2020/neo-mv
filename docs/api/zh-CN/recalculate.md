@@ -17,7 +17,7 @@ Recalculate(super, vectors [, thsad, smooth, blksize, search, searchparam, mvlam
 | 参数 | 类型 | 默认值 | 取值与作用 |
 | --- | --- | --- | --- |
 | `super` | 剪辑 | 必填 | 携带辅助图像的 Super 剪辑；前缀须与生成时一致。 |
-| `vectors` | 剪辑数组 | 必填 | 携带运动分析属性的剪辑；具体要求见下文。 |
+| `vectors` | 剪辑或剪辑数组 | 必填 | 携带运动分析属性的剪辑；具体要求见下文。 |
 | `thsad` | 整数 | `200` | 有符号 int32 阈值：映射矢量的新测误差超过缩放阈值时搜索。允许负值。 |
 | `smooth` | 布尔 | `true` | 插值旧矢量网格；false 选择最近的旧块。 |
 | `blksize` | 整数数组 | 继承 Super | 目标 [宽, 高]，省略或空数组时继承 Super；支持的组合和对齐要求同 Super。 |
@@ -58,11 +58,13 @@ Recalculate(super, vectors [, thsad, smooth, blksize, search, searchparam, mvlam
 
 ## 输入要求
 
-使用前缀一致、受支持 GRAY/YUV 格式的 Super。轴数组可传单值或单元素数组（两轴相同），或两个值 [水平, 垂直]；空数组继承 Super，超过两项报错。块尺寸与对齐规则见 [Super](super.md)。 vectors 须为非空剪辑数组。旧数据采样精度须匹配 Super；旧块尺寸、pel 和网格可以不同。
+使用前缀一致、受支持 GRAY/YUV 格式的 Super。轴数组可传单值或单元素数组（两轴相同），或两个值 [水平, 垂直]；空数组继承 Super，超过两项报错。块尺寸与对齐规则见 [Super](super.md)。vectors 接受单个矢量剪辑或非空矢量剪辑数组。旧数据采样精度须匹配 Super；旧块尺寸、pel 和网格可以不同。
 
 ## 返回值与属性
 
-按输入顺序返回等长剪辑数组，即使只有一个成员也返回数组。每个结果保留 Super 可见图像和时间轴，写入重新计算的 Analysis 属性，delta 保留为该成员原始值。越界参考取最近的源帧。
+一个输入矢量剪辑对应一个输出剪辑。AviSynth 中，单剪辑输入直接返回剪辑；显式数组输入按原顺序返回等长数组，`[clip]` 也保留数组形态。VapourSynth Python 中，只有一个输出时返回 `VideoNode`，即使输入为 `[clip]`；多个输出按输入顺序返回列表。
+
+每个结果保留 Super 可见图像和时间轴，写入重新计算的 Analysis 属性，delta 保留为该成员原始值。越界参考取最近的源帧。
 
 AviSynth 从第一个输入 Super 传递音频和场序。
 
@@ -79,9 +81,9 @@ core = vs.core
 core.std.LoadPlugin(path="/path/to/neo-mv.dll")
 clip = core.std.BlankClip(width=64, height=48, length=12, fpsnum=24, format=vs.YUV420P8)
 s = core.neo_mv.Super(clip, blksize=8, overlap=4, pad=32)
-v = core.neo_mv.AnalyseMany(s, radius=1, badrange=0, metric="dct")
+v = core.neo_mv.Analyse(s, delta=1, badrange=0, metric="dct")
 result = core.neo_mv.Recalculate(s, v, blksize=8, overlap=4, metric="dct")
-result[0].set_output()
+result.set_output()
 ```
 
 ### AviSynth
@@ -90,12 +92,12 @@ result[0].set_output()
 LoadPlugin("/path/to/neo-mv.dll")
 clip = BlankClip(width=64, height=48, length=12, fps=24, pixel_type="YV12")
 s = neo_mv_Super(clip, blksize=8, overlap=4, pad=32)
-v = neo_mv_AnalyseMany(s, radius=1, badrange=0, metric="dct")
+v = neo_mv_Analyse(s, delta=1, badrange=0, metric="dct")
 result = neo_mv_Recalculate(s, v, blksize=8, overlap=4, metric="dct")
-return result[0]
+return result
 ```
 
-`result` 是数组，示例仅输出成员 0；可以索引其他成员或将整个数组交给支持的下游函数。
+`result` 是剪辑，可直接作为矢量输入传给 `Compensate`。批量细化时可传入 `AnalyseMany` 返回的数组，各输入成员按原顺序一一对应输出。
 
 ## 限制与常见错误
 

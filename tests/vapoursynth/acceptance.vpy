@@ -178,7 +178,13 @@ fails(lambda: mv.AnalyseMany(s, radius=16384))
 
 # Recalculate clamped references, metadata-only input and saved delta.
 old = mv.Analyse(s, delta=-1)
-recalc = outputs(mv.Recalculate(s, [old, mv.Analyse(s, delta=1)]))
+for vectors in (old, [old]):
+    single = mv.Recalculate(s, vectors)
+    assert isinstance(single, vs.VideoNode)
+    assert isinstance(mv.Recalculate(s, single), vs.VideoNode)
+    assert single.get_frame(1).props[P + "AnalysisDeltaFrame"] == -1
+recalc = mv.Recalculate(s, [old, mv.Analyse(s, delta=1)])
+assert isinstance(recalc, list)
 assert len(recalc) == 2
 assert analysis(recalc[0].get_frame(0)) == ([0] * 4, [0] * 4)
 changed_delta = edit(old, lambda n, f: f.props.update({P + "AnalysisDeltaFrame": 200 if n else -1}))

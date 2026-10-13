@@ -2,7 +2,7 @@
 
 这里逐个解释 neo-mv 公开函数怎样把输入变成输出：数据表示、计算顺序、公式、参数进入计算的位置，以及边界和舍入怎样影响结果。每篇函数说明包含一个数值例子；多处共用的运算在独立文章中展开。
 
-文中函数名省略宿主前缀：VapourSynth 使用 `core.neo_mv.Super(...)`，AviSynth 使用 `neo_mv_Super(...)`，其他函数同理。两者共用计算过程和参数名。AviSynth 使用 `[8, 8]` 这样的原生数组；`AnalyseMany` 和 `Recalculate` 返回 clip 数组，即使 `Recalculate` 只有一个输出也一样。`KernelInfo` 按 `[backend, target, fft, fft_lanes]` 的顺序返回数组。
+文中函数名省略宿主前缀：VapourSynth 使用 `core.neo_mv.Super(...)`，AviSynth 使用 `neo_mv_Super(...)`，其他函数同理。两者共用计算过程和参数名。AviSynth 使用 `[8, 8]` 这样的原生数组；`AnalyseMany` 返回 clip 数组。`Recalculate` 的单剪辑输入返回单剪辑，显式 AviSynth 数组输入保留数组形态，包括 `[clip]`。`KernelInfo` 按 `[backend, target, fft, fft_lanes]` 的顺序返回数组。
 
 [Analyse 文章](analyse.md#45-从样本计算原始误差) 解释 SAD、SATD 和 DCT 块误差，包含 DCT 系数量化及舍入边界判定。[公共分析数据](shared/analysis-data.md) 说明这些误差如何被后续函数使用。
 

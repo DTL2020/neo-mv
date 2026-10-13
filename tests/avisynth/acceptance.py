@@ -54,7 +54,7 @@ run("registration", "\n".join(f'Assert(FunctionExists("neo_mv_{n}"),"missing {n}
 paths = {
     "super": "s", "analyse": "neo_mv_Analyse(s,delta=-1,badrange=0)",
     "many": "v[3]", "recalculate": "neo_mv_Recalculate(s,v)[2]",
-    "recalculate-single": "neo_mv_Recalculate(s,b)[0]",
+    "recalculate-single": "neo_mv_Recalculate(s,b)",
     "scene": "neo_mv_SCDetection(c,b)", "compensate": "neo_mv_Compensate(c,s,b)",
     "degrain": "neo_mv_Degrain(c,s,v,thsad=[400,400],limit=255.0,planes=[0,1,2])",
     "vector-mask": "neo_mv_VectorLengthMask(b)", "sad-mask": "neo_mv_SADMask(b)",
@@ -91,9 +91,23 @@ last""")
 ''')
 run("recalculate-order", '''
 r=neo_mv_Recalculate(s,v)
+Assert(IsArray(r) && ArraySize(r)==4)
 return r[3].ScriptClip("""Assert(propGetInt(last, "MVUtensilsAnalysisDelta") == -2)
 last""")
 ''')
+# Preserve the caller's container, including explicit singleton arrays.
+for name, vectors, check, selected in (
+    ("clip", "b", "IsClip(r)", "r"),
+    ("singleton", "[b]", "IsArray(r) && ArraySize(r)==1", "r[0]"),
+    ("array", "[b,f]", "IsArray(r) && ArraySize(r)==2", "r[0]"),
+):
+    for named in (False, True):
+        arguments = f"s,vectors={vectors}" if named else f"s,{vectors}"
+        run(f"recalculate-shape-{name}-{named}",
+            f"r=neo_mv_Recalculate({arguments})\nAssert({check})\n"
+            f"r=neo_mv_Recalculate(s,r)\nAssert({check})\n"
+            f'return {selected}.ScriptClip("""Assert(propGetInt(last, "MVUtensilsAnalysisDelta") == 1)\n'
+            'last""").Prefetch(4)')
 for name, expression in {
     "analyse": "neo_mv_DepanAnalyse(c,b,info=true)",
     "compensate": "neo_mv_DepanCompensate(c,d,info=true)",
@@ -127,6 +141,12 @@ for frame, value in enumerate((30, 90, 90)):
     run(f"reference-pixels-{frame}",
         "return neo_mv_Compensate(c,s,b,thsad=16320,thscd1=16320).Prefetch(4)",
         frame=frame, prefix=temporal, extra=("--expect-y8-sum", str(32 * 32 * value)))
+    for refine in (False, True):
+        run(f"recalculate-consumer-{frame}-{refine}",
+            f"v={'neo_mv_Recalculate(s,b,thsad=0)' if refine else 'b'}\n"
+            "Assert(IsClip(v))\n"
+            "return neo_mv_Compensate(c,s,v,thsad=16320,thscd1=16320).Prefetch(4)",
+            frame=frame, prefix=temporal, extra=("--expect-y8-sum", str(32 * 32 * value)))
 
 for name, body, error in [
     ("missing-block", "return neo_mv_Super(c,overlap=4)", "blksize"),
@@ -134,6 +154,8 @@ for name, body, error in [
     ("bad-radius", "return neo_mv_AnalyseMany(s,radius=0)", "radius"),
     ("large-bundle", "return neo_mv_AnalyseMany(s,radius=16384)", "radius"),
     ("empty-recalculate", "return neo_mv_Recalculate(s,[])", "nonempty"),
+    ("single-recalculate-invalid", "return neo_mv_Recalculate(s,c)", "member[0]"),
+    ("singleton-recalculate-invalid", "return neo_mv_Recalculate(s,[c])", "member[0]"),
     ("bundle-rollback", "return neo_mv_Recalculate(s,[b,c])", "member[1]"),
     ("bad-degrain", "return neo_mv_Degrain1(c,s,v)", "exactly 2R"),
     ("bad-format", 'return neo_mv_Super(BlankClip(c,pixel_type="RGB32"),8,4)', "format"),
@@ -192,7 +214,7 @@ setup = ('c=BlankClip(width=32,height=32,length=6,pixel_type="Y32")\n'
          's=neo_mv_Super(c,blksize=8,overlap=0)\n'
          'v=neo_mv_Analyse(s)\n')
 for expression in ('neo_mv_Analyse(s,metric="dct")', 'neo_mv_AnalyseMany(s,metric="dct")[0]',
-                   'neo_mv_Recalculate(s,v,metric="dct")[0]'):
+                   'neo_mv_Recalculate(s,v,metric="dct")'):
     run("float-dct-"+str(count), "return "+expression, prefix=setup, error="integer samples")
 print(f"AviSynth {a.backend}: {count} cases passed; all 44 functions registered.")
 # Mixed policy registration and configuration through the native C++ AVS adapter.

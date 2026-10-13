@@ -1,11 +1,11 @@
 # Recalculate
 
-Returns a video-node array under `clip`, one output for each input member of `vectors`, preserving member order. Parameters are in registration order:
+Each input vector node produces one output node. AviSynth preserves the input container: one clip returns one clip, while an explicit array returns an equal-length array in member order, including singleton arrays. VapourSynth writes the outputs under `clip`; its Python binding returns a `VideoNode` for one output and a list for multiple outputs. Parameters are in registration order:
 
 | Parameter | Default | Domain and effect |
 | --- | --- | --- |
 | super | Required node | New image samples and visible output |
-| vectors | Required nonempty node array | Old analysis fields, one per output |
+| vectors | Required node or nonempty node array | Old analysis fields, one per output |
 | thsad | 200 | Signed int32; scaled error threshold below/equal to which mapped vectors are not refined |
 | smooth | True | Interpolate the old grid when true; nearest selection otherwise |
 | blksize | Inherit Super | Target block pair from [allowed sizes](../super/plugin.md) |

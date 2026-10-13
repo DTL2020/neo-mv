@@ -2,7 +2,7 @@
 
 ## 1. What the function computes
 
-`Recalculate` takes an array of old analysis nodes, maps each member's vectors onto a new block grid, measures fresh errors on the new Super samples, and searches further when needed. Output member count and order match the input array.
+`Recalculate` takes one old analysis node or an array of nodes, maps each node's vectors onto a new block grid, measures fresh errors on the new Super samples, and searches further when needed. Each input node produces one output node. See the [API return-value rules](../../api/en/recalculate.md#return-value-and-properties) for host-specific container behavior.
 
 Old errors are validated but do not decide whether to search. Even unchanged vectors receive newly measured errors. Visible output and initial properties come from `super`, not old vector nodes.
 

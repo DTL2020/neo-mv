@@ -67,7 +67,7 @@ vectors = neo_mv_AnalyseMany(super_clip, radius=1)
 return neo_mv_Degrain1(clip, super_clip, vectors)
 ```
 
-Function names and parameter order follow the API reference, with the `neo_mv_` prefix. Array parameters accept native arrays such as `[16, 8]`; a scalar is shorthand for one element. `AnalyseMany` and `Recalculate` return clip arrays, including a one-element array for a single Recalculate input. `neo_mv_KernelInfo()` returns `[backend, target, fft, fft_lanes]`. Boolean parameters use `true`/`false`. Audio and parity are forwarded from the first input clip; field calculations use `_Field` properties or an explicit `tff`. Depan's `info=true` uses AviSynth's `propShow` to draw its diagnostic property.
+Function names and parameter order follow the API reference, with the `neo_mv_` prefix. Array parameters accept native arrays such as `[16, 8]`; a scalar is shorthand for one element. `AnalyseMany` returns a clip array. `Recalculate` returns a clip for a single clip input and preserves explicit arrays, including `[clip]`. `neo_mv_KernelInfo()` returns `[backend, target, fft, fft_lanes]`. Boolean parameters use `true`/`false`. Audio and parity are forwarded from the first input clip; field calculations use `_Field` properties or an explicit `tff`. Depan's `info=true` uses AviSynth's `propShow` to draw its diagnostic property.
 
 ## SIMD and CPU selection
 

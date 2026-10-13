@@ -17,7 +17,7 @@ Brackets here mark optional arguments, not a literal array. Use named optional a
 | Parameter | Type | Default | Values and effect |
 | --- | --- | --- | --- |
 | `super` | Clip | Required | Super clip carrying auxiliary images; use the same prefix as the producer. |
-| `vectors` | Clip array | Required | Motion-analysis clip carrying analysis properties; see input requirements below. |
+| `vectors` | Clip or clip array | Required | Motion-analysis clips carrying analysis properties; see input requirements below. |
 | `thsad` | Integer | `200` | Signed int32 threshold: search when freshly measured mapped-vector error exceeds the scaled threshold. Negative values are allowed. |
 | `smooth` | Boolean | `true` | Interpolate the old vector grid; false selects a nearest old block. |
 | `blksize` | Integer array | Super value | Target [width, height], inherited from Super when omitted/empty. Supported pairs and alignment follow Super. |
@@ -58,11 +58,13 @@ Search parameters control traversal; they do not universally impose a displaceme
 
 ## Input requirements
 
-Use a Super with matching prefix and supported GRAY/YUV sample format. Axis arrays accept a scalar or one value for both axes, or two values [horizontal, vertical]; empty arrays inherit Super and more than two values fail. Block sizes and alignment follow [Super](super.md). Supply a nonempty vector clip array. Input sample precision must match Super; old block sizes, pel and grids may differ.
+Use a Super with matching prefix and supported GRAY/YUV sample format. Axis arrays accept a scalar or one value for both axes, or two values [horizontal, vertical]; empty arrays inherit Super and more than two values fail. Block sizes and alignment follow [Super](super.md). Supply one vector clip or a nonempty array of vector clips. Input sample precision must match Super; old block sizes, pel and grids may differ.
 
 ## Return value and properties
 
-Returns a clip array with one result per input member, in input order, even for one member. Each result preserves Super’s visible image/timeline and writes recalculated Analysis properties with the member’s original delta. Out-of-range references are clamped to the nearest source frame.
+One input vector clip produces one output clip. In AviSynth, a single clip returns a clip directly; an explicit array returns an equal-length array in input order, including `[clip]`. In VapourSynth Python, one output is returned as a `VideoNode`, even for `[clip]` input; multiple outputs are returned as a list in input order.
+
+Each result preserves Super’s visible image/timeline and writes recalculated Analysis properties with the member’s original delta. Out-of-range references are clamped to the nearest source frame.
 
 AviSynth forwards audio and parity from the first input, Super.
 
@@ -79,9 +81,9 @@ core = vs.core
 core.std.LoadPlugin(path="/path/to/neo-mv.dll")
 clip = core.std.BlankClip(width=64, height=48, length=12, fpsnum=24, format=vs.YUV420P8)
 s = core.neo_mv.Super(clip, blksize=8, overlap=4, pad=32)
-v = core.neo_mv.AnalyseMany(s, radius=1, badrange=0, metric="dct")
+v = core.neo_mv.Analyse(s, delta=1, badrange=0, metric="dct")
 result = core.neo_mv.Recalculate(s, v, blksize=8, overlap=4, metric="dct")
-result[0].set_output()
+result.set_output()
 ```
 
 ### AviSynth
@@ -90,12 +92,12 @@ result[0].set_output()
 LoadPlugin("/path/to/neo-mv.dll")
 clip = BlankClip(width=64, height=48, length=12, fps=24, pixel_type="YV12")
 s = neo_mv_Super(clip, blksize=8, overlap=4, pad=32)
-v = neo_mv_AnalyseMany(s, radius=1, badrange=0, metric="dct")
+v = neo_mv_Analyse(s, delta=1, badrange=0, metric="dct")
 result = neo_mv_Recalculate(s, v, blksize=8, overlap=4, metric="dct")
-return result[0]
+return result
 ```
 
-`result` is an array; the example outputs only member 0. Index another member or pass the full array to a compatible consumer.
+`result` is a clip and can be passed directly to `Compensate` as its vector input. For batch refinement, pass the array from `AnalyseMany`; each input member produces one result in the same order.
 
 ## Restrictions and common errors
 
