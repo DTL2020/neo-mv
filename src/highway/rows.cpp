@@ -1390,6 +1390,14 @@ namespace fused_motion {
 #include "core/motion/analyse-block-inl.hpp"
 #undef NEO_MV_MOTION_ATTR
 
+#if defined(__GNUC__) || defined(__clang__)
+namespace inline_search {
+#define NEO_MV_MOTION_ATTR HWY_ATTR __attribute__((always_inline))
+#include "core/motion/search-loop-inl.hpp"
+#undef NEO_MV_MOTION_ATTR
+} // namespace inline_search
+#endif
+
 template <class T, int Pel, int GrayWidth = 0, int LumaWidth = 16, bool Satd = false, bool PackedSource = false>
 struct AnalyseInteger {
   const MotionMetricRequest<T>& block;
@@ -1433,8 +1441,22 @@ struct AnalyseInteger {
     best = {vector, cost, raw};
     return true;
   }
+  // For the short byte SAD, keep candidate state in the search body instead
+  // of saving registers around a separate call for every candidate. Keeping
+  // this wrapper out of line bounds duplication at its block call sites.
+#if defined(__GNUC__) || defined(__clang__)
+  __attribute__((flatten))
+  HWY_NOINLINE SearchResult refine_small(SearchResult initial, const SearchParams& p) {
+    return inline_search::refine_impl(initial, p, *this);
+  }
+#endif
   SearchResult refine(SearchResult initial, const SearchParams& p) {
-    return refine_impl(initial, p, *this);
+#if defined(__GNUC__) || defined(__clang__)
+    if constexpr (std::is_same_v<T, std::uint8_t> && GrayWidth == 0 && LumaWidth == 8 && !Satd)
+      return refine_small(initial, p);
+    else
+#endif
+      return refine_impl(initial, p, *this);
   }
   // Keep this less frequent ring body out of the main search's live state.
   HWY_NOINLINE bool improve_expansion(MotionVector vector, const SearchParams& p, SearchResult& best) const {
