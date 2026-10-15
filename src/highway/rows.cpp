@@ -686,11 +686,11 @@ HWY_INLINE auto PackedIntegerSatdRow(D d, const T* a, std::ptrdiff_t as, const T
   return IntegerSatdHorizontal(d, hn::Sub(va, vb));
 }
 
-template <int Width, class D>
+template <int Width, int Height = Width, class D>
 std::int64_t PackedByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs) {
   const hn::Repartition<std::int32_t, D> wide;
   auto sum = hn::Zero(wide);
-  for (int y = 0; y < Width; y += 8) {
+  for (int y = 0; y < Height; y += 8) {
     auto r0 = PackedIntegerSatdRow(d, a + y * as, as, b + y * bs, bs);
     auto r1 = PackedIntegerSatdRow(d, a + (y + 1) * as, as, b + (y + 1) * bs, bs);
     auto r2 = PackedIntegerSatdRow(d, a + (y + 2) * as, as, b + (y + 2) * bs, bs);
@@ -961,8 +961,14 @@ HWY_NOINLINE std::int64_t MetricKnown(const T *a, std::ptrdiff_t as, const T *b,
         return ByteSatd<32, 32>(hn::CappedTag<std::int16_t, 32>{}, a, as, b, bs, w, h);
       if (w == 12 && h == 12 && hn::Lanes(hn::CappedTag<std::int16_t, 16>{}) == 16)
         return PaddedIntegerSatd<12>(hn::CappedTag<std::int16_t, 16>{}, a, as, b, bs);
-      if (w == 24 && h == 24 && hn::Lanes(hn::CappedTag<std::int16_t, 32>{}) == 32)
-        return PaddedIntegerSatd<24>(hn::CappedTag<std::int16_t, 32>{}, a, as, b, bs);
+      if (w == 24 && h == 24) {
+        if (hn::Lanes(hn::CappedTag<std::int16_t, 32>{}) == 32)
+          return PaddedIntegerSatd<24>(hn::CappedTag<std::int16_t, 32>{}, a, as, b, bs);
+        const hn::CappedTag<std::int16_t, 16> packed;
+        if (hn::Lanes(packed) == 16)
+          return ByteSatd<16, 24>(packed, a, as, b, bs, w, h) +
+                 PackedByteSatd<8, 24>(packed, a + 16, as, b + 16, bs);
+      }
       if (w < 8)
         return ByteSatd(hn::CappedTag<std::int16_t, 4>{}, a, as, b, bs, w, h);
       if (w < 16)
