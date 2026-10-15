@@ -582,15 +582,15 @@ std::int64_t ByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::
   return total;
 }
 
-template <class D>
-HWY_INLINE auto PackedByteSatdRow(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b,
+template <class D, class T>
+HWY_INLINE auto PackedIntegerSatdRow(D d, const T* a, std::ptrdiff_t as, const T* b,
                                    std::ptrdiff_t bs) {
-  const hn::Rebind<std::uint8_t, D> bytes;
-  const hn::Half<decltype(bytes)> row;
+  const hn::Rebind<T, D> pixels;
+  const hn::Half<decltype(pixels)> row;
   // The two halves hold rows y and y+4. Each load covers one complete
   // row; each four-lane cell remains independent.
-  const auto va = hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, a + 4 * as), hn::LoadU(row, a)));
-  const auto vb = hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, b + 4 * bs), hn::LoadU(row, b)));
+  const auto va = hn::PromoteTo(d, hn::Combine(pixels, hn::LoadU(row, a + 4 * as), hn::LoadU(row, a)));
+  const auto vb = hn::PromoteTo(d, hn::Combine(pixels, hn::LoadU(row, b + 4 * bs), hn::LoadU(row, b)));
   return IntegerSatdHorizontal(d, hn::Sub(va, vb));
 }
 
@@ -599,15 +599,27 @@ std::int64_t PackedByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const
   const hn::Repartition<std::int32_t, D> wide;
   auto sum = hn::Zero(wide);
   for (int y = 0; y < Width; y += 8) {
-    auto r0 = PackedByteSatdRow(d, a + y * as, as, b + y * bs, bs);
-    auto r1 = PackedByteSatdRow(d, a + (y + 1) * as, as, b + (y + 1) * bs, bs);
-    auto r2 = PackedByteSatdRow(d, a + (y + 2) * as, as, b + (y + 2) * bs, bs);
-    auto r3 = PackedByteSatdRow(d, a + (y + 3) * as, as, b + (y + 3) * bs, bs);
+    auto r0 = PackedIntegerSatdRow(d, a + y * as, as, b + y * bs, bs);
+    auto r1 = PackedIntegerSatdRow(d, a + (y + 1) * as, as, b + (y + 1) * bs, bs);
+    auto r2 = PackedIntegerSatdRow(d, a + (y + 2) * as, as, b + (y + 2) * bs, bs);
+    auto r3 = PackedIntegerSatdRow(d, a + (y + 3) * as, as, b + (y + 3) * bs, bs);
     Hadamard(r0, r1, r2, r3);
     const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
     sum = hn::Add(sum, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1)));
   }
   return hn::ReduceSum(wide, sum) / 2;
+}
+
+template <class D>
+std::int64_t PackedWordSatd8(D d, const std::uint16_t* a, std::ptrdiff_t as, const std::uint16_t* b,
+                            std::ptrdiff_t bs) {
+  const auto r0 = PackedIntegerSatdRow(d, a, as, b, bs);
+  const auto r1 = PackedIntegerSatdRow(d, a + as, as, b + bs, bs);
+  const auto r2 = PackedIntegerSatdRow(d, a + 2 * as, as, b + 2 * bs, bs);
+  const auto r3 = PackedIntegerSatdRow(d, a + 3 * as, as, b + 3 * bs, bs);
+  const auto even = hn::Max(hn::Abs(hn::Add(r0, r1)), hn::Abs(hn::Add(r2, r3)));
+  const auto odd = hn::Max(hn::Abs(hn::Sub(r0, r1)), hn::Abs(hn::Sub(r2, r3)));
+  return hn::ReduceSum(d, hn::Add(even, odd));
 }
 
 template <class D>
@@ -820,8 +832,12 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
       return total;
     }
     if (satd && w <= 32 && h <= 32) {
-      if (w == 8 && h == 8)
+      if (w == 8 && h == 8) {
+        const hn::CappedTag<std::int32_t, 16> packed;
+        if (hn::Lanes(packed) == 16)
+          return PackedWordSatd8(packed, a, as, b, bs);
         return SmallWordSatd<8, 8>(hn::CappedTag<std::int32_t, 8>{}, a, as, b, bs, w, h);
+      }
       if (w == 16 && h == 16)
         return SmallWordSatd<16, 16>(hn::CappedTag<std::int32_t, 16>{}, a, as, b, bs, w, h);
       if (w == 32 && h == 32)
