@@ -482,9 +482,9 @@ template <class T> void bounded_sad_thresholds() {
   }
 }
 
-template <class T> void integer_satd_tails() {
+template <class T> void integer_metric_tails() {
   std::mt19937 rng(72819);
-  for (int w : {4, 8, 12, 16, 20, 24, 28, 32, 36, 48, 60, 64, 124, 128, 132}) {
+  for (int w : {1, 2, 3, 4, 5, 7, 8, 12, 15, 16, 20, 24, 28, 31, 32, 36, 48, 60, 63, 64, 124, 127, 128, 132}) {
     GuardBuffer<T> a(w, 12), b(w, 12);
     for (int trial = 0; trial < 8; ++trial) {
       for (int y = 0; y < 12; ++y)
@@ -492,9 +492,13 @@ template <class T> void integer_satd_tails() {
           a.view().row(y)[x] = T(rng());
           b.view().row(y)[x] = T(rng());
         }
-      check(neo_mv::block_metric(a.read(), b.read(), neo_mv::BlockMetric::satd) ==
-                neo_mv::simd::block_metric(a.read(), b.read(), neo_mv::BlockMetric::satd),
-            "integer SATD guarded tail mismatch");
+      for (auto metric : {neo_mv::BlockMetric::sad, neo_mv::BlockMetric::satd}) {
+        if (metric == neo_mv::BlockMetric::satd && w % 4)
+          continue;
+        check(neo_mv::block_metric(a.read(), b.read(), metric) ==
+                  neo_mv::simd::block_metric(a.read(), b.read(), metric),
+              "integer metric guarded tail mismatch");
+      }
     }
   }
 }
@@ -622,8 +626,8 @@ int main() {
       rectangular_metrics<float>();
       guarded_statistics();
       two_cell_satd_regression();
-      integer_satd_tails<std::uint8_t>();
-      integer_satd_tails<std::uint16_t>();
+      integer_metric_tails<std::uint8_t>();
+      integer_metric_tails<std::uint16_t>();
       additional_square_metrics<std::uint8_t>();
       additional_square_metrics<std::uint16_t>();
       additional_square_metrics<float>();

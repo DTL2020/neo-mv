@@ -310,10 +310,37 @@ template <class V> void Hadamard(V &a, V &b, V &c, V &d) {
   d = hn::Sub(am, cm);
 }
 // Motion blocks fit this bounded fast path. The entire u16 SAD is at most
-// 128 * 128 * 65535 < INT32_MAX, including all lanes and scalar tails.
+// 128 * 128 * 65535 < INT32_MAX, including all lanes and narrowed tails.
 // Larger public metric rectangles keep the checked accumulation below.
+template <class D>
+std::int64_t SmallWordSad(D d, const std::uint16_t* a, std::ptrdiff_t as, const std::uint16_t* b,
+                          std::ptrdiff_t bs, int w, int h) {
+  const hn::Rebind<std::uint16_t, D> narrow;
+  const int n = int(hn::Lanes(d));
+  const int end = w / n * n;
+  auto sum = hn::Zero(d);
+  for (int y = 0; y < h; ++y) {
+    const auto* ar = a + y * as;
+    const auto* br = b + y * bs;
+    for (int x = 0; x < end; x += n) {
+      const auto difference = hn::AbsDiff(hn::LoadU(narrow, ar + x), hn::LoadU(narrow, br + x));
+      sum = hn::Add(sum, hn::PromoteTo(d, difference));
+    }
+  }
+  std::int64_t total = hn::ReduceSum(d, sum);
+  if constexpr (hn::MaxLanes(d) > 1) {
+    if (end != w) {
+      const hn::CappedTag<std::int32_t, hn::MaxLanes(d) / 2> half;
+      total += SmallWordSad(half, a + end, as, b + end, bs, w - end, h);
+    }
+  }
+  return total;
+}
+
 template <class T, class D>
 std::int64_t SmallSad(D d, const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs, int w, int h) {
+  if constexpr (std::is_same_v<T, std::uint16_t>)
+    return SmallWordSad(d, a, as, b, bs, w, h);
   const int n = int(hn::Lanes(d));
   auto sum = hn::Zero(d);
   std::int64_t tail = 0;
