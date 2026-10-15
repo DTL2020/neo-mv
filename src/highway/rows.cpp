@@ -659,18 +659,25 @@ std::int64_t PaddedIntegerSatd(D d, const T* a, std::ptrdiff_t as, const T* b, s
     return hn::ReduceSum(wide, sum);
 }
 
+template <class D, class V>
+HWY_INLINE auto FoldedByteHorizontal(D d, V value) {
+  const auto signs = hn::OddEven(hn::Set(d, -1), hn::Set(d, 1));
+  value = hn::Abs(hn::Add(value, hn::IfNegativeThenNegOrUndefIfZero(signs, hn::Reverse2(d, value))));
+  const hn::RepartitionToWide<D> pairs;
+  return hn::Max(value, hn::BitCast(d, hn::Reverse2(pairs, hn::BitCast(pairs, value))));
+}
+
 template <class D>
-HWY_INLINE auto ByteSatdRow(D d, const std::uint8_t* a, const std::uint8_t* b) {
+HWY_INLINE auto ByteResidualRow(D d, const std::uint8_t* a, const std::uint8_t* b) {
   const hn::Rebind<std::uint8_t, D> bytes;
-  return IntegerSatdHorizontal(d, hn::Sub(hn::PromoteTo(d, hn::LoadU(bytes, a)),
-                                      hn::PromoteTo(d, hn::LoadU(bytes, b))));
+  return hn::Sub(hn::PromoteTo(d, hn::LoadU(bytes, a)), hn::PromoteTo(d, hn::LoadU(bytes, b)));
 }
 
 // Keep adjacent pixels together instead of deinterleaving four byte streams.
-// A byte residual is at most 255, a 4x4 coefficient at most 4080, and
-// four absolute coefficients sum to at most 16320: signed 16-bit is enough.
+// A vertical coefficient is at most 1020 and a folded horizontal maximum
+// at most 2040. Four folded rows sum to at most 8160: signed 16-bit is enough.
 // Widen each pair before accumulating across cells. For a 128x128 block,
-// even the conservative bound 128*128*4080 fits signed 32-bit.
+// even the conservative bound 128*128*2040 fits signed 32-bit.
 template <int FixedWidth = 0, int FixedHeight = 0, class D>
 std::int64_t ByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs, int w,
                       int h) {
@@ -684,17 +691,18 @@ std::int64_t ByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::
   auto sum = hn::Zero(wide);
   for (int y = 0; y < h; y += 4) {
     for (int x = 0; x < end; x += n) {
-      auto r0 = ByteSatdRow(d, a + y * as + x, b + y * bs + x);
-      auto r1 = ByteSatdRow(d, a + (y + 1) * as + x, b + (y + 1) * bs + x);
-      auto r2 = ByteSatdRow(d, a + (y + 2) * as + x, b + (y + 2) * bs + x);
-      auto r3 = ByteSatdRow(d, a + (y + 3) * as + x, b + (y + 3) * bs + x);
+      auto r0 = ByteResidualRow(d, a + y * as + x, b + y * bs + x);
+      auto r1 = ByteResidualRow(d, a + (y + 1) * as + x, b + (y + 1) * bs + x);
+      auto r2 = ByteResidualRow(d, a + (y + 2) * as + x, b + (y + 2) * bs + x);
+      auto r3 = ByteResidualRow(d, a + (y + 3) * as + x, b + (y + 3) * bs + x);
       Hadamard(r0, r1, r2, r3);
-      const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
+      const auto absolute = hn::Add(hn::Add(FoldedByteHorizontal(d, r0), FoldedByteHorizontal(d, r1)),
+                                    hn::Add(FoldedByteHorizontal(d, r2), FoldedByteHorizontal(d, r3)));
       sum = hn::Add(sum, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1)));
     }
   }
-  // Every integer 4x4 cell has an even absolute sum, so division may be
-  // deferred until after the vector reduction without changing rounding.
+  // Each folded maximum appears twice within its four-lane cell. Remove
+  // that duplication here; the SATD division was folded into the maxima.
   std::int64_t total = hn::ReduceSum(wide, sum) / 2;
   if constexpr (hn::MaxLanes(d) > 4) {
     if (end != w) {
@@ -706,7 +714,7 @@ std::int64_t ByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::
   return total;
 }
 
-template <class D, class T>
+template <bool Horizontal = true, class D, class T>
 HWY_INLINE auto PackedIntegerSatdRow(D d, const T* a, std::ptrdiff_t as, const T* b,
                                    std::ptrdiff_t bs) {
   const hn::Rebind<T, D> pixels;
@@ -715,7 +723,10 @@ HWY_INLINE auto PackedIntegerSatdRow(D d, const T* a, std::ptrdiff_t as, const T
   // row; each four-lane cell remains independent.
   const auto va = hn::PromoteTo(d, hn::Combine(pixels, hn::LoadU(row, a + 4 * as), hn::LoadU(row, a)));
   const auto vb = hn::PromoteTo(d, hn::Combine(pixels, hn::LoadU(row, b + 4 * bs), hn::LoadU(row, b)));
-  return IntegerSatdHorizontal(d, hn::Sub(va, vb));
+  if constexpr (Horizontal)
+    return IntegerSatdHorizontal(d, hn::Sub(va, vb));
+  else
+    return hn::Sub(va, vb);
 }
 
 template <int Width, int Height = Width, class D>
@@ -723,13 +734,19 @@ std::int64_t PackedByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const
   const hn::Repartition<std::int32_t, D> wide;
   auto sum = hn::Zero(wide);
   for (int y = 0; y < Height; y += 8) {
-    auto r0 = PackedIntegerSatdRow(d, a + y * as, as, b + y * bs, bs);
-    auto r1 = PackedIntegerSatdRow(d, a + (y + 1) * as, as, b + (y + 1) * bs, bs);
-    auto r2 = PackedIntegerSatdRow(d, a + (y + 2) * as, as, b + (y + 2) * bs, bs);
-    auto r3 = PackedIntegerSatdRow(d, a + (y + 3) * as, as, b + (y + 3) * bs, bs);
+    auto r0 = PackedIntegerSatdRow<Width == 8>(d, a + y * as, as, b + y * bs, bs);
+    auto r1 = PackedIntegerSatdRow<Width == 8>(d, a + (y + 1) * as, as, b + (y + 1) * bs, bs);
+    auto r2 = PackedIntegerSatdRow<Width == 8>(d, a + (y + 2) * as, as, b + (y + 2) * bs, bs);
+    auto r3 = PackedIntegerSatdRow<Width == 8>(d, a + (y + 3) * as, as, b + (y + 3) * bs, bs);
     Hadamard(r0, r1, r2, r3);
-    const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
-    sum = hn::Add(sum, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1)));
+    if constexpr (Width == 8) {
+      const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
+      sum = hn::Add(sum, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1)));
+    } else {
+      const auto folded = hn::Add(hn::Add(FoldedByteHorizontal(d, r0), FoldedByteHorizontal(d, r1)),
+                                  hn::Add(FoldedByteHorizontal(d, r2), FoldedByteHorizontal(d, r3)));
+      sum = hn::Add(sum, hn::WidenMulPairwiseAdd(wide, folded, hn::Set(d, 1)));
+    }
   }
   return hn::ReduceSum(wide, sum) / 2;
 }
