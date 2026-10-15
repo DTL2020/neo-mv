@@ -482,21 +482,34 @@ HWY_INLINE std::int64_t FixedByteSad(const std::uint8_t *a, std::ptrdiff_t as, c
 }
 // The source is a tight block prepared once per search; reference rows remain
 // strided. Pairing rows fills the vector without reading reference padding.
-template <int Width>
-HWY_INLINE std::int64_t PairedByteSad(const std::uint8_t* a, const std::uint8_t* b, std::ptrdiff_t bs) {
+template <int Width, bool Bounded = false>
+HWY_INLINE std::int64_t PairedByteSad(const std::uint8_t* a, const std::uint8_t* b, std::ptrdiff_t bs,
+                                     std::int64_t limit = INT64_MAX) {
   const hn::CappedTag<std::uint8_t, 2 * Width> d;
   const hn::Half<decltype(d)> half;
   const hn::Repartition<std::uint64_t, decltype(d)> wide;
   if (hn::Lanes(d) != 2 * Width)
-    return FixedByteSad<Width, Width>(a, Width, b, bs);
+    return FixedByteSad<Width, Width, Bounded>(a, Width, b, bs, limit);
+  std::int64_t total = 0;
   auto sum0 = hn::Zero(wide), sum1 = sum0;
   for (int y = 0; y < Width; y += 4) {
     const auto r0 = hn::Combine(d, hn::LoadU(half, b + (y + 1) * bs), hn::LoadU(half, b + y * bs));
     const auto r1 = hn::Combine(d, hn::LoadU(half, b + (y + 3) * bs), hn::LoadU(half, b + (y + 2) * bs));
     sum0 = hn::Add(sum0, hn::SumsOf8AbsDiff(hn::LoadU(d, a + y * Width), r0));
     sum1 = hn::Add(sum1, hn::SumsOf8AbsDiff(hn::LoadU(d, a + (y + 2) * Width), r1));
+    if constexpr (Bounded) {
+      // Preserve the 16x16 checks after 8, 12, and 16 rows.
+      if (Width != 16 || y != 0) {
+        total = static_cast<std::int64_t>(hn::ReduceSum(wide, hn::Add(sum0, sum1)));
+        if (total >= limit)
+          return total;
+      }
+    }
   }
-  return static_cast<std::int64_t>(hn::ReduceSum(wide, hn::Add(sum0, sum1)));
+  if constexpr (Bounded)
+    return total;
+  else
+    return static_cast<std::int64_t>(hn::ReduceSum(wide, hn::Add(sum0, sum1)));
 }
 HWY_INLINE std::int64_t FixedByteSad12(const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b,
                                        std::ptrdiff_t bs) {
@@ -1285,8 +1298,8 @@ HWY_INLINE bool MotionMetric420Bounded(const MotionMetricRequest<T>& block, cons
   const auto y = MotionPlane(block, frames, 0, qx, qy, phase);
 #if HWY_TARGET != HWY_SCALAR
   if constexpr (PackedSource) {
-    static_assert(std::is_same_v<T, std::uint8_t> && LumaWidth == 8 && !Satd);
-    errors[0] = PairedByteSad<LumaWidth>(y.source, y.reference, y.reference_stride);
+    static_assert(std::is_same_v<T, std::uint8_t> && (LumaWidth == 8 || LumaWidth == 16) && !Satd);
+    errors[0] = PairedByteSad<LumaWidth, (Bounded && LumaWidth != 8)>(y.source, y.reference, y.reference_stride, limit);
   } else
 #endif
   if constexpr (Satd) {
@@ -1324,7 +1337,12 @@ HWY_INLINE bool MotionMetric420Bounded(const MotionMetricRequest<T>& block, cons
     auto r = MotionPlane(block, frames, k, cx, cy, chroma_phase);
     if constexpr (PackedSource)
       r.source_stride = LumaWidth / 2;
-    errors[k] = MotionSad420Plane<T, LumaWidth / 2, false, (Pel != 0)>(r, limit);
+#if HWY_TARGET != HWY_SCALAR
+    if constexpr (PackedSource && LumaWidth == 16)
+      errors[k] = PairedByteSad<8>(r.source, r.reference, r.reference_stride);
+    else
+#endif
+      errors[k] = MotionSad420Plane<T, LumaWidth / 2, false, (Pel != 0)>(r, limit);
     if constexpr (Bounded) {
       if (errors[k] >= limit)
         return false;
@@ -1400,7 +1418,7 @@ SearchResult AnalyseBlock420(const MotionMetricRequest<T>& block, const MetricRe
                              MotionTriple predictor, const SpatialPredictors& spatial, MotionVector zero,
                              CandidateDomain omega, int layer, std::int64_t lambda,
                              std::int64_t bad_threshold, AnalyseControls controls) {
-  if constexpr (std::is_same_v<T, std::uint8_t> && Width == 8 && !Satd) {
+  if constexpr (std::is_same_v<T, std::uint8_t> && (Width == 8 || Width == 16) && !Satd) {
     HWY_ALIGN std::uint8_t source[Width * Width * 3 / 2];
     auto packed = block;
     for (int y = 0; y < Width; ++y)
