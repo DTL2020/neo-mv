@@ -1278,7 +1278,10 @@ HWY_INLINE bool MotionMetric420Bounded(const MotionMetricRequest<T>& block, cons
     errors[0] = MetricKnown<T, true>(y.source, y.source_stride, y.reference, y.reference_stride, 8, 8);
 #endif
   } else {
-    errors[0] = MotionSad420Plane<T, LumaWidth, Bounded, (Pel != 0)>(y, limit);
+    // Byte 8x8 needs only one final reduction; its four-row prefix check
+    // costs more than the few remaining loads. Still reject before chroma.
+    constexpr bool CheckRows = Bounded && !(std::is_same_v<T, std::uint8_t> && LumaWidth == 8);
+    errors[0] = MotionSad420Plane<T, LumaWidth, CheckRows, (Pel != 0)>(y, limit);
   }
   // For SATD this is the exact luma transform error, not a SAD estimate.
   // Chroma and all admitted penalties are nonnegative, so it is a lower bound.
