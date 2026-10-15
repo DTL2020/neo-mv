@@ -592,6 +592,41 @@ HWY_INLINE V IntegerSatdHorizontal(D d, V row) {
   return hn::Add(row, hn::IfNegativeThenNegOrUndefIfZero(oppositeSign, opposite));
 }
 
+template <int Width, class D, class T>
+HWY_INLINE auto PaddedIntegerSatdRow(D d, const T* a, const T* b) {
+  const hn::Rebind<T, D> pixels;
+  return IntegerSatdHorizontal(d, hn::Sub(hn::PromoteTo(d, hn::LoadN(pixels, a, Width)),
+                                         hn::PromoteTo(d, hn::LoadN(pixels, b, Width))));
+}
+
+// Width ends at a complete four-pixel cell. Zero padding adds only zero
+// transform cells and lets the active columns share one vertical loop.
+template <int Width, class D, class T>
+std::int64_t PaddedIntegerSatd(D d, const T* a, std::ptrdiff_t as, const T* b, std::ptrdiff_t bs) {
+  using SumD = std::conditional_t<std::is_same_v<T, std::uint8_t>, hn::Repartition<std::int32_t, D>, D>;
+  const SumD wide;
+  auto sum = hn::Zero(wide);
+  for (int y = 0; y < Width; y += 4) {
+    auto r0 = PaddedIntegerSatdRow<Width>(d, a + y * as, b + y * bs);
+    auto r1 = PaddedIntegerSatdRow<Width>(d, a + (y + 1) * as, b + (y + 1) * bs);
+    auto r2 = PaddedIntegerSatdRow<Width>(d, a + (y + 2) * as, b + (y + 2) * bs);
+    auto r3 = PaddedIntegerSatdRow<Width>(d, a + (y + 3) * as, b + (y + 3) * bs);
+    if constexpr (std::is_same_v<T, std::uint8_t>) {
+      Hadamard(r0, r1, r2, r3);
+      const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
+      sum = hn::Add(sum, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1)));
+    } else {
+      const auto even = hn::Max(hn::Abs(hn::Add(r0, r1)), hn::Abs(hn::Add(r2, r3)));
+      const auto odd = hn::Max(hn::Abs(hn::Sub(r0, r1)), hn::Abs(hn::Sub(r2, r3)));
+      sum = hn::Add(sum, hn::Add(even, odd));
+    }
+  }
+  if constexpr (std::is_same_v<T, std::uint8_t>)
+    return hn::ReduceSum(wide, sum) / 2;
+  else
+    return hn::ReduceSum(wide, sum);
+}
+
 template <class D>
 HWY_INLINE auto ByteSatdRow(D d, const std::uint8_t* a, const std::uint8_t* b) {
   const hn::Rebind<std::uint8_t, D> bytes;
@@ -892,6 +927,8 @@ HWY_NOINLINE std::int64_t MetricKnown(const T *a, std::ptrdiff_t as, const T *b,
         return SmallWordSatd<16, 16>(hn::CappedTag<std::int32_t, 16>{}, a, as, b, bs, w, h);
       if (w == 32 && h == 32)
         return SmallWordSatd<32, 32>(hn::CappedTag<std::int32_t, 16>{}, a, as, b, bs, w, h);
+      if (w == 12 && h == 12 && hn::Lanes(hn::CappedTag<std::int32_t, 16>{}) == 16)
+        return PaddedIntegerSatd<12>(hn::CappedTag<std::int32_t, 16>{}, a, as, b, bs);
       if (w > 32 || h > 32) {
         std::int64_t total = 0;
         for (int y = 0; y < h; y += 32)
@@ -922,6 +959,10 @@ HWY_NOINLINE std::int64_t MetricKnown(const T *a, std::ptrdiff_t as, const T *b,
       }
       if (w == 32 && h == 32)
         return ByteSatd<32, 32>(hn::CappedTag<std::int16_t, 32>{}, a, as, b, bs, w, h);
+      if (w == 12 && h == 12 && hn::Lanes(hn::CappedTag<std::int16_t, 16>{}) == 16)
+        return PaddedIntegerSatd<12>(hn::CappedTag<std::int16_t, 16>{}, a, as, b, bs);
+      if (w == 24 && h == 24 && hn::Lanes(hn::CappedTag<std::int16_t, 32>{}) == 32)
+        return PaddedIntegerSatd<24>(hn::CappedTag<std::int16_t, 32>{}, a, as, b, bs);
       if (w < 8)
         return ByteSatd(hn::CappedTag<std::int16_t, 4>{}, a, as, b, bs, w, h);
       if (w < 16)
