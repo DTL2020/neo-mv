@@ -33,8 +33,12 @@ class DctWorkspace {
           if (!std::isfinite(double(value)) || double(value) != std::floor(double(value)))
             throw std::invalid_argument("DCT sample outside integer pixel range");
         }
-        if (value < 0 || value > maximum_)
-          throw std::invalid_argument("DCT sample outside integer pixel range");
+        // Every uint8 value fits the constructor's validated 8..16 bit range.
+        // Keeping an impossible per-pixel rejection here prevents vectorized loads.
+        if constexpr (!std::is_same_v<T, std::uint8_t>) {
+          if (value < 0 || value > maximum_)
+            throw std::invalid_argument("DCT sample outside integer pixel range");
+        }
         sum_ += std::uint16_t(value);
         input_[std::size_t(y) * stride_ + x] = float(value) - float(midpoint_);
       }

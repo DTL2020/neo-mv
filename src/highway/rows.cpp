@@ -38,10 +38,53 @@ SadReferenceSum Statistics(const T* a, std::ptrdiff_t as, const T* b, std::ptrdi
   }
   return {tail.sad + hn::ReduceSum(d, sad), tail.reference_sum + hn::ReduceSum(d, sum)};
 }
-SadReferenceSum StatisticsU8(const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs, int w, int h) {
-  return Statistics(a, as, b, bs, w, h);
+#if HWY_TARGET != HWY_SCALAR
+template <class D>
+SadReferenceSum ByteStatistics(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs,
+                               int w, int h) {
+  const hn::Repartition<std::uint64_t, D> wide;
+  const int n = int(hn::Lanes(d));
+  auto sad = hn::Zero(wide), sum = hn::Zero(wide);
+  for (int y = 0; y < h; ++y) {
+    int x = 0;
+    for (; x <= w - n; x += n) {
+      const auto reference = hn::LoadU(d, b + x);
+      sum = hn::Add(sum, hn::SumsOf8(reference));
+      if (a)
+        sad = hn::Add(sad, hn::SumsOf8AbsDiff(hn::LoadU(d, a + x), reference));
+    }
+    if (x < w) {
+      // Zero both tails without reading the row's padding or the next page.
+      const auto reference = hn::LoadN(d, b + x, w - x);
+      sum = hn::Add(sum, hn::SumsOf8(reference));
+      if (a)
+        sad = hn::Add(sad, hn::SumsOf8AbsDiff(hn::LoadN(d, a + x, w - x), reference));
+    }
+    if (y + 1 < h) {
+      if (a)
+        a += as;
+      b += bs;
+    }
+  }
+  return {static_cast<std::int64_t>(hn::ReduceSum(wide, sad)), static_cast<std::int64_t>(hn::ReduceSum(wide, sum))};
 }
-SadReferenceSum StatisticsU16(const std::uint16_t* a, std::ptrdiff_t as, const std::uint16_t* b, std::ptrdiff_t bs, int w, int h) {
+#endif
+SadReferenceSum StatisticsU8(const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs, int w,
+                             int h) {
+#if HWY_TARGET != HWY_SCALAR
+  if (w <= 8)
+    return ByteStatistics(hn::CappedTag<std::uint8_t, 8>{}, a, as, b, bs, w, h);
+  if (w <= 16)
+    return ByteStatistics(hn::CappedTag<std::uint8_t, 16>{}, a, as, b, bs, w, h);
+  if (w <= 32)
+    return ByteStatistics(hn::CappedTag<std::uint8_t, 32>{}, a, as, b, bs, w, h);
+  return ByteStatistics(hn::CappedTag<std::uint8_t, 64>{}, a, as, b, bs, w, h);
+#else
+  return Statistics(a, as, b, bs, w, h);
+#endif
+}
+SadReferenceSum StatisticsU16(const std::uint16_t* a, std::ptrdiff_t as, const std::uint16_t* b, std::ptrdiff_t bs,
+                              int w, int h) {
   return Statistics(a, as, b, bs, w, h);
 }
 
@@ -355,15 +398,18 @@ HWY_INLINE std::int64_t FixedByteSad(const std::uint8_t *a, std::ptrdiff_t as, c
                                     std::int64_t limit = INT64_MAX) {
   const hn::CappedTag<std::uint8_t, Width> d;
   const hn::Repartition<std::uint64_t, decltype(d)> wide;
+  const int lanes = int(hn::Lanes(d));
   auto sum0 = hn::Zero(wide), sum1 = sum0, sum2 = sum0, sum3 = sum0;
   std::int64_t total = 0;
   for (int y = 0; y < Height; y += 4) {
     const auto* ar = a + y * as;
     const auto* br = b + y * bs;
-    sum0 = hn::Add(sum0, hn::SumsOf8AbsDiff(hn::LoadU(d, ar), hn::LoadU(d, br)));
-    sum1 = hn::Add(sum1, hn::SumsOf8AbsDiff(hn::LoadU(d, ar + as), hn::LoadU(d, br + bs)));
-    sum2 = hn::Add(sum2, hn::SumsOf8AbsDiff(hn::LoadU(d, ar + 2 * as), hn::LoadU(d, br + 2 * bs)));
-    sum3 = hn::Add(sum3, hn::SumsOf8AbsDiff(hn::LoadU(d, ar + 3 * as), hn::LoadU(d, br + 3 * bs)));
+    for (int x = 0; x < Width; x += lanes) {
+      sum0 = hn::Add(sum0, hn::SumsOf8AbsDiff(hn::LoadU(d, ar + x), hn::LoadU(d, br + x)));
+      sum1 = hn::Add(sum1, hn::SumsOf8AbsDiff(hn::LoadU(d, ar + as + x), hn::LoadU(d, br + bs + x)));
+      sum2 = hn::Add(sum2, hn::SumsOf8AbsDiff(hn::LoadU(d, ar + 2 * as + x), hn::LoadU(d, br + 2 * bs + x)));
+      sum3 = hn::Add(sum3, hn::SumsOf8AbsDiff(hn::LoadU(d, ar + 3 * as + x), hn::LoadU(d, br + 3 * bs + x)));
+    }
     if constexpr (Bounded) {
       if (Height != 16 || (LateCheck ? y >= 8 : y != 0)) {
         total = static_cast<std::int64_t>(hn::ReduceSum(wide, hn::Add(hn::Add(sum0, sum1), hn::Add(sum2, sum3))));
@@ -377,7 +423,23 @@ HWY_INLINE std::int64_t FixedByteSad(const std::uint8_t *a, std::ptrdiff_t as, c
   else
     return static_cast<std::int64_t>(hn::ReduceSum(wide, hn::Add(hn::Add(sum0, sum1), hn::Add(sum2, sum3))));
 }
-HWY_INLINE std::int64_t FixedByteSad4(const std::uint8_t *a, std::ptrdiff_t as, const std::uint8_t *b, std::ptrdiff_t bs) {
+HWY_INLINE std::int64_t FixedByteSad12(const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b,
+                                       std::ptrdiff_t bs) {
+  const hn::CappedTag<std::uint8_t, 16> d;
+  const hn::Repartition<std::uint64_t, decltype(d)> wide;
+  auto sum0 = hn::Zero(wide), sum1 = sum0, sum2 = sum0, sum3 = sum0;
+  for (int y = 0; y < 12; y += 4) {
+    const auto* ar = a + y * as;
+    const auto* br = b + y * bs;
+    sum0 = hn::Add(sum0, hn::SumsOf8AbsDiff(hn::LoadN(d, ar, 12), hn::LoadN(d, br, 12)));
+    sum1 = hn::Add(sum1, hn::SumsOf8AbsDiff(hn::LoadN(d, ar + as, 12), hn::LoadN(d, br + bs, 12)));
+    sum2 = hn::Add(sum2, hn::SumsOf8AbsDiff(hn::LoadN(d, ar + 2 * as, 12), hn::LoadN(d, br + 2 * bs, 12)));
+    sum3 = hn::Add(sum3, hn::SumsOf8AbsDiff(hn::LoadN(d, ar + 3 * as, 12), hn::LoadN(d, br + 3 * bs, 12)));
+  }
+  return static_cast<std::int64_t>(hn::ReduceSum(wide, hn::Add(hn::Add(sum0, sum1), hn::Add(sum2, sum3))));
+}
+HWY_INLINE std::int64_t FixedByteSad4(const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b,
+                                      std::ptrdiff_t bs) {
   const hn::CappedTag<std::uint8_t, 16> d;
   const hn::Repartition<std::uint64_t, decltype(d)> wide;
   // Read exactly four bytes per row; packing allows one SAD for the block.
@@ -479,9 +541,13 @@ HWY_INLINE auto ByteSatdRow(D d, const std::uint8_t* a, const std::uint8_t* b) {
 // four absolute coefficients sum to at most 16320: signed 16-bit is enough.
 // Widen each pair before accumulating across cells. For a 128x128 block,
 // even the conservative bound 128*128*4080 fits signed 32-bit.
-template <class D>
-std::int64_t ByteSatd(D d, const std::uint8_t *a, std::ptrdiff_t as,
-                      const std::uint8_t *b, std::ptrdiff_t bs, int w, int h) {
+template <int FixedWidth = 0, int FixedHeight = 0, class D>
+std::int64_t ByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs, int w,
+                      int h) {
+  if constexpr (FixedWidth != 0)
+    w = FixedWidth;
+  if constexpr (FixedHeight != 0)
+    h = FixedHeight;
   const hn::Repartition<std::int32_t, D> wide;
   const int n = int(hn::Lanes(d));
   const int end = w / n * n;
@@ -667,6 +733,8 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
 #if HWY_TARGET != HWY_SCALAR
   if constexpr (std::is_same_v<T, std::uint8_t>) {
     if (satd && w <= 128 && h <= 128) {
+      if (w == 8 && h == 8)
+        return ByteSatd<8, 8>(hn::CappedTag<std::int16_t, 8>{}, a, as, b, bs, w, h);
       if (w < 8)
         return ByteSatd(hn::CappedTag<std::int16_t, 4>{}, a, as, b, bs, w, h);
       if (w < 16)
@@ -691,6 +759,10 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
           return FixedByteSad<16, 16>(a, as, b, bs);
         if (w == 8 && h == 8)
           return FixedByteSad<8, 8>(a, as, b, bs);
+        if (w == 12 && h == 12 && hn::Lanes(hn::CappedTag<std::uint8_t, 16>{}) >= 12)
+          return FixedByteSad12(a, as, b, bs);
+        if (w == 32 && h == 32 && 32 % hn::Lanes(hn::CappedTag<std::uint8_t, 32>{}) == 0)
+          return FixedByteSad<32, 32>(a, as, b, bs);
         if (w >= 64)
           return SmallByteSad(hn::CappedTag<T, 64>{}, a, as, b, bs, w, h);
         if (w >= 32)

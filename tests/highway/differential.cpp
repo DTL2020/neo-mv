@@ -567,10 +567,10 @@ template <class T> void additional_square_metrics() {
 
 template <class T>
 void rectangular_metrics() {
-  for (auto shape : {std::pair{4, 8}, {6, 12},  {6, 24},  {8, 32},  {12, 6},  {12, 16}, {12, 24}, {12, 48}, {16, 12},
-                     {16, 24},        {16, 32}, {16, 64}, {24, 6},  {24, 12}, {24, 16}, {24, 32}, {24, 48}, {32, 8},
-                     {32, 24},        {32, 64}, {48, 12}, {48, 24}, {48, 64}, {64, 16}, {64, 48}, {4, 6},   {6, 4},
-                     {4, 16},         {16, 4},  {6, 8},   {8, 6},   {8, 12},  {12, 8},  {8, 16}}) {
+  for (auto shape : {std::pair{4, 8}, {12, 12}, {32, 32}, {6, 12},  {6, 24},  {8, 32},  {12, 6},  {12, 16}, {12, 24},
+                     {12, 48},        {16, 12}, {16, 24}, {16, 32}, {16, 64}, {24, 6},  {24, 12}, {24, 16}, {24, 32},
+                     {24, 48},        {32, 8},  {32, 24}, {32, 64}, {48, 12}, {48, 24}, {48, 64}, {64, 16}, {64, 48},
+                     {4, 6},          {6, 4},   {4, 16},  {16, 4},  {6, 8},   {8, 6},   {8, 12},  {12, 8},  {8, 16}}) {
     const auto [w, h] = shape;
     GuardBuffer<T> source(w, h), reference(w, h);
     auto a = source.view(), b = reference.view();
@@ -589,6 +589,26 @@ void rectangular_metrics() {
   }
 }
 
+void guarded_statistics() {
+  using K = neo_mv::HighwayKernels<std::uint8_t>;
+  for (int w : {1, 3, 4, 6, 7, 8, 9, 12, 15, 16, 17, 24, 31, 32, 33, 48, 63, 64, 65, 128}) {
+    GuardBuffer<std::uint8_t> source(w, 12), reference(w, 12);
+    for (int pattern = 0; pattern < 3; ++pattern) {
+      for (int y = 0; y < 12; ++y)
+        for (int x = 0; x < w; ++x) {
+          source.view().row(y)[x] = pattern == 0 ? 0 : pattern == 1 ? 255 : std::uint8_t(x * 29 + y * 17);
+          reference.view().row(y)[x] = pattern == 0 ? 255 : pattern == 1 ? 0 : std::uint8_t(x * 13 + y * 31 + 7);
+        }
+      const auto actual = K::sad_and_reference_sum(source.read(), reference.read());
+      check(actual.sad == neo_mv::block_metric(source.read(), reference.read(), neo_mv::BlockMetric::sad),
+            "guarded statistics SAD");
+      const auto sum = neo_mv::block_luma_sum(reference.read());
+      check(actual.reference_sum == sum && K::block_luma_sum(reference.read()) == sum,
+            "guarded statistics reference sum");
+    }
+  }
+}
+
 int main() {
   try {
     for (auto target : hwy::SupportedAndGeneratedTargets()) {
@@ -598,6 +618,7 @@ int main() {
       rectangular_metrics<std::uint8_t>();
       rectangular_metrics<std::uint16_t>();
       rectangular_metrics<float>();
+      guarded_statistics();
       two_cell_satd_regression();
       byte_satd_tails();
       additional_square_metrics<std::uint8_t>();
