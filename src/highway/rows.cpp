@@ -1421,8 +1421,11 @@ struct AnalyseInteger {
     const auto luma = errors[0], chroma = errors[1] + errors[2], raw = luma + chroma;
     const auto dx = std::int64_t(vector.x) - p.predictor.x, dy = std::int64_t(vector.y) - p.predictor.y;
     // PreparedBlockError::analyse has proved this bound for the whole domain.
-    const auto cost = raw + p.lambda * (dx * dx + dy * dy) / 256 +
-                      luma * p.penalty / 256 + chroma * p.penalty / 256;
+    // All terms are nonnegative. Unsigned division avoids signed rounding
+    // corrections; admission also proves that each product fits int64_t.
+    const auto cost = raw + std::int64_t(std::uint64_t(p.lambda) * std::uint64_t(dx * dx + dy * dy) / 256) +
+                      std::int64_t(std::uint64_t(luma) * std::uint64_t(p.penalty) / 256) +
+                      std::int64_t(std::uint64_t(chroma) * std::uint64_t(p.penalty) / 256);
     if (cost >= best.cost)
       return false;
     best = {vector, cost, raw};
