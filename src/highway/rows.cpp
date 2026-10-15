@@ -1295,14 +1295,16 @@ HWY_INLINE MetricRequest<T> MotionPlaneAt(const MotionMetricRequest<T>& block,
                                           std::int64_t vx, std::int64_t vy) {
   static_assert(Pel == 1 || Pel == 2 || Pel == 4);
   // Every candidate footprint has already been admitted. Absolute subpixel
-  // coordinates are nonnegative even for negative vectors, so unsigned
-  // quotient/remainder avoid a signed floor correction for each candidate.
-  const auto x = std::uint64_t(std::int64_t(block.x[k]) * Pel + vx);
-  const auto y = std::uint64_t(std::int64_t(block.y[k]) * Pel + vy);
-  const auto phase = std::size_t((y % Pel) * Pel + x % Pel);
+  // coordinates are nonnegative even for negative vectors. Signed shifts
+  // preserve that admitted quotient without unsigned high-bit masks when
+  // the compiler moves the block origin outside the shift.
+  constexpr int shift = Pel == 4 ? 2 : Pel == 2 ? 1 : 0;
+  const auto x = std::int64_t(block.x[k]) * Pel + vx;
+  const auto y = std::int64_t(block.y[k]) * Pel + vy;
+  const auto phase = std::size_t((y & (Pel - 1)) * Pel + (x & (Pel - 1)));
   auto r = block.planes[k];
   r.reference_stride = frames.strides[k][phase];
-  const auto offset = std::ptrdiff_t(y / Pel) * r.reference_stride + std::ptrdiff_t(x / Pel);
+  const auto offset = std::ptrdiff_t(y >> shift) * r.reference_stride + std::ptrdiff_t(x >> shift);
   r.reference = frames.references[k][phase] + offset;
   return r;
 }
