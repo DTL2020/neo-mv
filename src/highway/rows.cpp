@@ -583,27 +583,31 @@ std::int64_t ByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::
 }
 
 template <class D>
-HWY_INLINE auto PackedByteSatdRow8(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b,
+HWY_INLINE auto PackedByteSatdRow(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b,
                                    std::ptrdiff_t bs) {
   const hn::Rebind<std::uint8_t, D> bytes;
   const hn::Half<decltype(bytes)> row;
-  // With 16 lanes, the two halves hold rows y and y+4. Loads stay
-  // within each eight-byte row; each four-lane cell remains independent.
+  // The two halves hold rows y and y+4. Each load covers one complete
+  // row; each four-lane cell remains independent.
   const auto va = hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, a + 4 * as), hn::LoadU(row, a)));
   const auto vb = hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, b + 4 * bs), hn::LoadU(row, b)));
   return IntegerSatdHorizontal(d, hn::Sub(va, vb));
 }
 
-template <class D>
-std::int64_t PackedByteSatd8(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs) {
+template <int Width, class D>
+std::int64_t PackedByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs) {
   const hn::Repartition<std::int32_t, D> wide;
-  auto r0 = PackedByteSatdRow8(d, a, as, b, bs);
-  auto r1 = PackedByteSatdRow8(d, a + as, as, b + bs, bs);
-  auto r2 = PackedByteSatdRow8(d, a + 2 * as, as, b + 2 * bs, bs);
-  auto r3 = PackedByteSatdRow8(d, a + 3 * as, as, b + 3 * bs, bs);
-  Hadamard(r0, r1, r2, r3);
-  const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
-  return hn::ReduceSum(wide, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1))) / 2;
+  auto sum = hn::Zero(wide);
+  for (int y = 0; y < Width; y += 8) {
+    auto r0 = PackedByteSatdRow(d, a + y * as, as, b + y * bs, bs);
+    auto r1 = PackedByteSatdRow(d, a + (y + 1) * as, as, b + (y + 1) * bs, bs);
+    auto r2 = PackedByteSatdRow(d, a + (y + 2) * as, as, b + (y + 2) * bs, bs);
+    auto r3 = PackedByteSatdRow(d, a + (y + 3) * as, as, b + (y + 3) * bs, bs);
+    Hadamard(r0, r1, r2, r3);
+    const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
+    sum = hn::Add(sum, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1)));
+  }
+  return hn::ReduceSum(wide, sum) / 2;
 }
 
 template <class D>
@@ -834,11 +838,15 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
       if (w == 8 && h == 8) {
         const hn::CappedTag<std::int16_t, 16> packed;
         if (hn::Lanes(packed) == 16)
-          return PackedByteSatd8(packed, a, as, b, bs);
+          return PackedByteSatd<8>(packed, a, as, b, bs);
         return ByteSatd<8, 8>(hn::CappedTag<std::int16_t, 8>{}, a, as, b, bs, w, h);
       }
-      if (w == 16 && h == 16)
+      if (w == 16 && h == 16) {
+        const hn::CappedTag<std::int16_t, 32> packed;
+        if (hn::Lanes(packed) == 32)
+          return PackedByteSatd<16>(packed, a, as, b, bs);
         return ByteSatd<16, 16>(hn::CappedTag<std::int16_t, 16>{}, a, as, b, bs, w, h);
+      }
       if (w == 32 && h == 32)
         return ByteSatd<32, 32>(hn::CappedTag<std::int16_t, 32>{}, a, as, b, bs, w, h);
       if (w < 8)
