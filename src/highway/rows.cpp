@@ -1381,6 +1381,13 @@ SearchResult AnalyseBlock420(const MotionMetricRequest<T>& block, const MetricRe
                              CandidateDomain omega, int layer, std::int64_t lambda,
                              std::int64_t bad_threshold, AnalyseControls controls) {
   if constexpr (std::is_same_v<T, std::uint8_t>) {
+    if (block.planes[0].width == 32) {
+      if (block.pel == 1)
+        return AnalyseBlock420<T, 1, 32>(block, frames, predictor, spatial, zero, omega, layer, lambda, bad_threshold, controls);
+      if (block.pel == 2)
+        return AnalyseBlock420<T, 2, 32>(block, frames, predictor, spatial, zero, omega, layer, lambda, bad_threshold, controls);
+      return AnalyseBlock420<T, 4, 32>(block, frames, predictor, spatial, zero, omega, layer, lambda, bad_threshold, controls);
+    }
     if (block.planes[0].satd) {
       if (block.pel == 1)
         return AnalyseBlock420<T, 1, 8, true>(block, frames, predictor, spatial, zero, omega, layer, lambda, bad_threshold, controls);

@@ -655,6 +655,7 @@ int main() {
         fused_analyse_block<std::uint8_t>(width);
       fused_analyse_block<std::uint16_t>();
       fused_analyse_block<std::uint8_t>(0, 8);
+      fused_analyse_block<std::uint8_t>(0, 32);
       fused_analyse_block<std::uint8_t>(0, 8, neo_mv::BlockMetric::satd);
       fused_analyse_block<std::uint16_t>(0, 8);
       fused_analyse_block<std::uint8_t>(0, 6);
