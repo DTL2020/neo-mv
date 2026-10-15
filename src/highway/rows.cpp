@@ -624,11 +624,23 @@ std::int64_t PackedIntegerSatd4(D d, const T* a, std::ptrdiff_t as, const T* b, 
   }
 }
 
-template <int Width, class D, class T>
+template <class D, class V>
+HWY_INLINE auto FoldedByteHorizontal(D d, V value) {
+  const auto signs = hn::OddEven(hn::Set(d, -1), hn::Set(d, 1));
+  value = hn::Abs(hn::Add(value, hn::IfNegativeThenNegOrUndefIfZero(signs, hn::Reverse2(d, value))));
+  const hn::RepartitionToWide<D> pairs;
+  return hn::Max(value, hn::BitCast(d, hn::Reverse2(pairs, hn::BitCast(pairs, value))));
+}
+
+template <int Width, bool Horizontal = true, class D, class T>
 HWY_INLINE auto PaddedIntegerSatdRow(D d, const T* a, const T* b) {
   const hn::Rebind<T, D> pixels;
-  return IntegerSatdHorizontal(d, hn::Sub(hn::PromoteTo(d, hn::LoadN(pixels, a, Width)),
-                                         hn::PromoteTo(d, hn::LoadN(pixels, b, Width))));
+  const auto residual = hn::Sub(hn::PromoteTo(d, hn::LoadN(pixels, a, Width)),
+                               hn::PromoteTo(d, hn::LoadN(pixels, b, Width)));
+  if constexpr (Horizontal)
+    return IntegerSatdHorizontal(d, residual);
+  else
+    return residual;
 }
 
 // Width ends at a complete four-pixel cell. Zero padding adds only zero
@@ -639,13 +651,15 @@ std::int64_t PaddedIntegerSatd(D d, const T* a, std::ptrdiff_t as, const T* b, s
   const SumD wide;
   auto sum = hn::Zero(wide);
   for (int y = 0; y < Width; y += 4) {
-    auto r0 = PaddedIntegerSatdRow<Width>(d, a + y * as, b + y * bs);
-    auto r1 = PaddedIntegerSatdRow<Width>(d, a + (y + 1) * as, b + (y + 1) * bs);
-    auto r2 = PaddedIntegerSatdRow<Width>(d, a + (y + 2) * as, b + (y + 2) * bs);
-    auto r3 = PaddedIntegerSatdRow<Width>(d, a + (y + 3) * as, b + (y + 3) * bs);
+    auto r0 = PaddedIntegerSatdRow<Width, !std::is_same_v<T, std::uint8_t>>(d, a + y * as, b + y * bs);
+    auto r1 = PaddedIntegerSatdRow<Width, !std::is_same_v<T, std::uint8_t>>(d, a + (y + 1) * as, b + (y + 1) * bs);
+    auto r2 = PaddedIntegerSatdRow<Width, !std::is_same_v<T, std::uint8_t>>(d, a + (y + 2) * as, b + (y + 2) * bs);
+    auto r3 = PaddedIntegerSatdRow<Width, !std::is_same_v<T, std::uint8_t>>(d, a + (y + 3) * as, b + (y + 3) * bs);
     if constexpr (std::is_same_v<T, std::uint8_t>) {
       Hadamard(r0, r1, r2, r3);
-      const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
+      // Folding leaves each maximum twice; the final division removes that duplication.
+      const auto absolute = hn::Add(hn::Add(FoldedByteHorizontal(d, r0), FoldedByteHorizontal(d, r1)),
+                                   hn::Add(FoldedByteHorizontal(d, r2), FoldedByteHorizontal(d, r3)));
       sum = hn::Add(sum, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1)));
     } else {
       const auto even = hn::Max(hn::Abs(hn::Add(r0, r1)), hn::Abs(hn::Add(r2, r3)));
@@ -657,14 +671,6 @@ std::int64_t PaddedIntegerSatd(D d, const T* a, std::ptrdiff_t as, const T* b, s
     return hn::ReduceSum(wide, sum) / 2;
   else
     return hn::ReduceSum(wide, sum);
-}
-
-template <class D, class V>
-HWY_INLINE auto FoldedByteHorizontal(D d, V value) {
-  const auto signs = hn::OddEven(hn::Set(d, -1), hn::Set(d, 1));
-  value = hn::Abs(hn::Add(value, hn::IfNegativeThenNegOrUndefIfZero(signs, hn::Reverse2(d, value))));
-  const hn::RepartitionToWide<D> pairs;
-  return hn::Max(value, hn::BitCast(d, hn::Reverse2(pairs, hn::BitCast(pairs, value))));
 }
 
 template <class D>
