@@ -524,16 +524,7 @@ template <class D, class V>
 HWY_INLINE V ByteSatdHorizontal(D d, V row) {
   const hn::Repartition<std::int32_t, D> pairs;
   const auto adjacent = hn::Reverse2(d, row);
-#if HWY_COMPILER_MSVC && HWY_ARCH_X86
-  const auto even = hn::Set(pairs, 0x0000FFFF);
-  const auto sum = hn::BitCast(pairs, hn::Add(row, adjacent));
-  const auto difference = hn::BitCast(pairs, hn::Sub(row, adjacent));
-  // MSVC spills the signed/unsigned copies in the 16-bit OddEven helper.
-  // Select in 32-bit pairs to keep the intermediates in registers.
-  row = hn::BitCast(d, hn::Or(hn::And(sum, even), hn::AndNot(even, difference)));
-#else
   row = hn::OddEven(hn::Sub(row, adjacent), hn::Add(row, adjacent));
-#endif
   const auto opposite = hn::BitCast(d, hn::Reverse2(pairs, hn::BitCast(pairs, row)));
   return hn::BitCast(
       d, hn::OddEven(hn::BitCast(pairs, hn::Sub(row, opposite)), hn::BitCast(pairs, hn::Add(row, opposite))));
@@ -586,19 +577,24 @@ std::int64_t ByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::
 }
 
 template <class D>
-std::int64_t PackedByteSatd8(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs) {
+HWY_INLINE auto PackedByteSatdRow8(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b,
+                                   std::ptrdiff_t bs) {
   const hn::Rebind<std::uint8_t, D> bytes;
   const hn::Half<decltype(bytes)> row;
-  const hn::Repartition<std::int32_t, D> wide;
   // With 16 lanes, the two halves hold rows y and y+4. Loads stay
   // within each eight-byte row; each four-lane cell remains independent.
-  const auto load = [&](const std::uint8_t* p, std::ptrdiff_t stride) {
-    return hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, p + 4 * stride), hn::LoadU(row, p)));
-  };
-  const auto residual = [&](int y) {
-    return ByteSatdHorizontal(d, hn::Sub(load(a + y * as, as), load(b + y * bs, bs)));
-  };
-  auto r0 = residual(0), r1 = residual(1), r2 = residual(2), r3 = residual(3);
+  const auto va = hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, a + 4 * as), hn::LoadU(row, a)));
+  const auto vb = hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, b + 4 * bs), hn::LoadU(row, b)));
+  return ByteSatdHorizontal(d, hn::Sub(va, vb));
+}
+
+template <class D>
+std::int64_t PackedByteSatd8(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs) {
+  const hn::Repartition<std::int32_t, D> wide;
+  auto r0 = PackedByteSatdRow8(d, a, as, b, bs);
+  auto r1 = PackedByteSatdRow8(d, a + as, as, b + bs, bs);
+  auto r2 = PackedByteSatdRow8(d, a + 2 * as, as, b + 2 * bs, bs);
+  auto r3 = PackedByteSatdRow8(d, a + 3 * as, as, b + 3 * bs, bs);
   Hadamard(r0, r1, r2, r3);
   const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
   return hn::ReduceSum(wide, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1))) / 2;
