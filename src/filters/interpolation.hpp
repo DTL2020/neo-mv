@@ -82,10 +82,7 @@ class TypedTemporalRuntime final : public TemporalRuntime {
   RenderPixels<T> pixels(ds::VideoProcessContext& ctx, int n) const {
     const auto f = frame(ctx.frames, 0, n);
     validate_frame(f.frame, clip_);
-    RenderPixels<T> result{};
-    for (int k = 0; k < clip_.format.plane_count; ++k)
-      result.at(static_cast<std::size_t>(k)) = plane<T>(f.frame.plane(k));
-    return result;
+    return render_frame_planes<T>(f.frame);
   }
 
 public:

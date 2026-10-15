@@ -11,10 +11,7 @@
 namespace neo_mv::ds2 {
 template <class T>
 RenderDestination<T> fresh_render_destination(ds::VideoProcessContext& ctx) {
-  RenderDestination<T> destination{};
-  for (int k = 0; k < ctx.dst.plane_count; ++k)
-    destination[k] = plane<T>(ctx.dst.plane(k));
-  return destination;
+  return render_frame_planes<T>(ctx.dst);
 }
 
 inline CompensateParameters compensate_parameters(const ds::ParamValues& values) {
@@ -144,9 +141,7 @@ public:
   void process(ds::VideoProcessContext& ctx, const RenderRequest& request) const override {
     const auto visible = frame(ctx.frames, 0, ctx.output_frame);
     validate_frame(visible.frame, clip_);
-    RenderPixels<T> pixels{};
-    for (int k = 0; k < visible.frame.plane_count; ++k)
-      pixels[k] = plane<T>(visible.frame.plane(k));
+    const auto pixels = render_frame_planes<T>(visible.frame);
     const auto current = frame(ctx.frames, 1, ctx.output_frame);
     FrameSuper<T> centre(current.frame, super_, prefix_);
     std::vector<std::unique_ptr<FrameSuper<T>>> owners;

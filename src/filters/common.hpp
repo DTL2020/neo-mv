@@ -1,6 +1,7 @@
 #pragma once
 
 #include <dualsynth/video_filter.hpp>
+#include "filters/frame_planes.hpp"
 #include "core/motion/analyse.hpp"
 #include "core/motion/recalculate.hpp"
 #include "core/motion/scene_classification.hpp"
@@ -117,16 +118,6 @@ inline void validate_frame(const ds::VideoFrameView& f, const ds::VideoInputInfo
                 p.height == (in.height >> (k ? in.format.subsampling_h : 0)),
             "frame dimensions changed");
   }
-}
-template <class T>
-span2d::Plane<const T> plane(const ds::PlaneView& p) {
-  return checked_plane(static_cast<const T*>(p.data), p.width, p.height, p.stride_bytes,
-                       std::numeric_limits<std::size_t>::max());
-}
-template <class T>
-span2d::Plane<T> plane(const ds::MutablePlaneView& p) {
-  return checked_plane(static_cast<T*>(p.data), p.width, p.height, p.stride_bytes,
-                       std::numeric_limits<std::size_t>::max());
 }
 inline AnalysisField read_field(const ds::RequestedVideoFrame& frame, const std::string& prefix, bool vectors = true) {
   const auto& props = properties(frame.frame);

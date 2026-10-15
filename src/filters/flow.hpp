@@ -66,9 +66,7 @@ public:
   void process(ds::VideoProcessContext& ctx, const FlowRequest& request) const override {
     const auto visible = frame(ctx.frames, 0, ctx.output_frame);
     validate_frame(visible.frame, clip_);
-    RenderPixels<T> pixels{};
-    for (int k = 0; k < visible.frame.plane_count; ++k)
-      pixels[k] = plane<T>(visible.frame.plane(k));
+    const auto pixels = render_frame_planes<T>(visible.frame);
     std::unique_ptr<FrameSuper<T>> owner;
     RenderImage<T> reference{};
     std::optional<bool> current_top, reference_top;
