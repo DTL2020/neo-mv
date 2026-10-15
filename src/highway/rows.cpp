@@ -385,6 +385,36 @@ HWY_INLINE auto ShortSadPairs(D narrow, const std::uint16_t *a, const std::uint1
                                 hn::Set(signed_narrow, 1));
 }
 
+// Four-row groups keep pairwise SAD accumulators independent. Restore the
+// signed-pair bias once per column strip; the full 128x128 bias fits int32.
+template <class D>
+std::int64_t SmallShortSad(D narrow, const std::uint16_t* a, std::ptrdiff_t as, const std::uint16_t* b,
+                           std::ptrdiff_t bs, int w, int h) {
+  const hn::Repartition<std::int32_t, D> d;
+  const int lanes = int(hn::Lanes(narrow));
+  const int end = w / lanes * lanes;
+  auto sum0 = hn::Zero(d), sum1 = sum0, sum2 = sum0, sum3 = sum0;
+  for (int y = 0; y < h; y += 4) {
+    const auto* ar = a + y * as;
+    const auto* br = b + y * bs;
+    for (int x = 0; x < end; x += lanes) {
+      sum0 = hn::Add(sum0, ShortSadPairs(narrow, ar + x, br + x));
+      sum1 = hn::Add(sum1, ShortSadPairs(narrow, ar + as + x, br + bs + x));
+      sum2 = hn::Add(sum2, ShortSadPairs(narrow, ar + 2 * as + x, br + 2 * bs + x));
+      sum3 = hn::Add(sum3, ShortSadPairs(narrow, ar + 3 * as + x, br + 3 * bs + x));
+    }
+  }
+  std::int64_t total = hn::ReduceSum(d, hn::Add(hn::Add(sum0, sum1), hn::Add(sum2, sum3))) +
+                       std::int64_t(end) * h * 32768;
+  if constexpr (hn::MaxLanes(narrow) > 4) {
+    if (end != w) {
+      const hn::CappedTag<std::uint16_t, hn::MaxLanes(narrow) / 2> half;
+      total += SmallShortSad(half, a + end, as, b + end, bs, w - end, h);
+    }
+  }
+  return total;
+}
+
 template <int Width, int Height, bool Bounded = false>
 HWY_INLINE std::int64_t FixedShortSad(const std::uint16_t *a, std::ptrdiff_t as,
                                      const std::uint16_t *b, std::ptrdiff_t bs,
@@ -940,6 +970,13 @@ HWY_NOINLINE std::int64_t MetricKnown(const T *a, std::ptrdiff_t as, const T *b,
           return FixedShortSad<64, 64>(a, as, b, bs);
         if (w == 128 && h == 128 && 128 % hn::Lanes(hn::CappedTag<std::uint16_t, 128>{}) == 0)
           return FixedShortSad<128, 128>(a, as, b, bs);
+        if (w >= 12 && w % 4 == 0 && h % 4 == 0) {
+          if (w < 16)
+            return SmallShortSad(hn::CappedTag<std::uint16_t, 8>{}, a, as, b, bs, w, h);
+          if (w < 32)
+            return SmallShortSad(hn::CappedTag<std::uint16_t, 16>{}, a, as, b, bs, w, h);
+          return SmallShortSad(hn::CappedTag<std::uint16_t, 32>{}, a, as, b, bs, w, h);
+        }
       }
 #endif
       if (w < 8)
