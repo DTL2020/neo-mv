@@ -262,3 +262,28 @@ for fn, args, skipped, tail, select in [('Analyse','s',21,3,'r'), ('AnalyseMany'
             'return x.ScriptClip("""Assert(propGetInt(last, "MVUtensilsAnalysisSAD", 0)==640)\nlast""")',
             prefix=setup,frame=0)
 print(f'AviSynth {a.backend}: {count} cases including satd aliases passed.')
+
+# Analyse -> Recalculate -> consumers retain the chosen error units.
+contract_setup = '''
+c=BlankClip(width=32,height=32,length=1,pixel_type="Y8",color_yuv=$008080) \\
+ + BlankClip(width=32,height=32,length=1,pixel_type="Y8",color_yuv=$048080) \\
+ + BlankClip(width=32,height=32,length=1,pixel_type="Y8",color_yuv=$008080)
+s=neo_mv_Super(c,blksize=8,overlap=0,pad=16,pel=1,onelevel=true)
+'''
+for metric, ae, re in [('sad',256,256), ('satd',128,128), ('dct',32,32),
+                       ('sad_dct_local',132,132), ('sad_satd_local',192,192),
+                       ('sad_dct_global',256,144), ('sad_satd_global',256,192),
+                       ('sad_satd_global_half',256,224)]:
+    options=f'metric="{metric}"' + (',metric_weight=0.5,metric_threshold=0' if 'local' in metric else '')
+    setup=contract_setup+f'v=neo_mv_AnalyseMany(s,radius=1,badrange=0,{options})\nr=neo_mv_Recalculate(s,v,thsad=0,{options})\n'
+    for group, error_value in [('v',ae),('r',re)]:
+        checked=setup+f'x={group}[0].ScriptClip("""Assert(propGetInt(last, "MVUtensilsAnalysisSAD", 0)=={error_value})\nlast""")\n'
+        for threshold in (error_value-1,error_value,error_value+1):
+            run('metric-comp-'+str(count),f'return neo_mv_Compensate(c,s,x,thsad={threshold},thscd1=16320)',
+                prefix=checked,frame=1,extra=('--expect-y8-sum',str(32*32*(4 if threshold<=error_value else 0))))
+            run('metric-flow-'+str(count),f'return neo_mv_Flow(c,s,x,thscd1={threshold},thscd2=0)',
+                prefix=checked,frame=1,extra=('--expect-y8-sum',str(32*32*(4 if threshold<error_value else 0))))
+        for threshold, pixel in [(error_value,4),(error_value*100,1)]:
+            run('metric-degrain-'+str(count),f'return neo_mv_Degrain(c,s,{group},thsad={threshold},thscd1=16320)',
+                prefix=setup,frame=1,extra=('--expect-y8-sum',str(32*32*pixel)))
+print(f'AviSynth {a.backend}: {count} cases including metric contracts passed.')

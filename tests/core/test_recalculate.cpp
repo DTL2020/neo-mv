@@ -85,6 +85,28 @@ void actual_pixels() {
   CHECK(result.values[0].vector.x == 1 && result.values[0].error == 0);
 }
 
+void threshold_rounding_order() {
+  MotionFixture<std::uint16_t> f(4, 4, 4, 4, 4, 1, true);
+  f.metadata.bits = 10;
+  // Two unit impulses: zero displacement costs 2, displacement +1 costs 0.
+  // All chroma samples are zero. At thsad=1, 10-bit 4x4 420 Recalculate
+  // scales to 1, unlike render/scene scaling which gives 2.
+  const auto extent = f.geometry.planes[0].current;
+  const auto origin = std::size_t(4) * (extent.width + 1) + 4;
+  f.source[0][origin] = 1;
+  f.reference[0][0][origin + 1] = 1;
+  RecalculateControls controls;
+  controls.mvlambda = controls.pnew = 0;
+  controls.search = 4;
+  controls.searchparam = 1;
+  controls.thsad = 1;
+  auto result = recalculate_vectors(f.old_field(), f.metadata, f.geometry, f.frames, controls);
+  CHECK(result.values[0].vector.x == 1 && result.values[0].vector.y == 0 && result.values[0].error == 0);
+  controls.thsad = 2; // scales to 2: equality retains the mapped vector
+  result = recalculate_vectors(f.old_field(), f.metadata, f.geometry, f.frames, controls);
+  CHECK(result.values[0].vector.x == 0 && result.values[0].vector.y == 0 && result.values[0].error == 2);
+}
+
 void metrics_and_admission() {
   MotionFixture<float> f(8, 8, 4, 4, 4, 1, true);
   for (auto& plane : f.source)
@@ -126,6 +148,7 @@ int main() {
   try {
     mapping();
     actual_pixels();
+    threshold_rounding_order();
     metrics_and_admission();
     std::cout << "Scalar Recalculate checks passed\n";
   } catch (const std::exception& e) {

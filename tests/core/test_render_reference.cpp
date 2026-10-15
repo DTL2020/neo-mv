@@ -130,6 +130,22 @@ void thresholds() {
   auto m = field().metadata;
   CHECK(RenderThresholdScale{m}(400) == 400);
   CHECK(RenderThresholdScale{m}(0) == 0);
+  for (const auto& item : {std::array<int, 3>{2, 2, 96}, {2, 1, 128}, {1, 1, 192}}) {
+    auto color = m;
+    color.chroma = true;
+    color.ratio_x = item[0];
+    color.ratio_y = item[1];
+    CHECK(RenderThresholdScale{color}(64) == item[2]);
+    CHECK(scene_thresholds(scene_descriptor(color), 64, 0).error == item[2]);
+  }
+  // Rounding order is part of the contract, not an interchangeable scale.
+  auto small = m;
+  small.block_width = small.block_height = 4;
+  small.bits = 10;
+  small.chroma = true;
+  small.ratio_x = small.ratio_y = 2;
+  CHECK(RenderThresholdScale{small}(1) == 2);
+  CHECK(scene_thresholds(scene_descriptor(small), 1, 0).error == 2);
   CHECK(RenderThresholdScale{m}(2147483648LL) == 2147483648LL); // no int32 saturation
   m.bits = 10;
   CHECK(RenderThresholdScale{m}(400) == 1605);

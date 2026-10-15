@@ -38,6 +38,42 @@ $$-px_0\le v_x<p(W+2h_p-x_0-B_x),\quad
 
 Upper bounds are exclusive. Shared range validation does not replace renderer-specific footprint checks.
 
+## Raw error and user threshold units
+
+Search comparison cost may include predictor-distance and candidate penalties. `AnalysisSAD` contains the winning candidate's freshly measured raw error, without those penalties. Recalculate remeasures even when its search threshold prevents refinement; it neither copies the old error nor inherits the producer's metric.
+
+For integer SAD, a constant difference d over area A contributes A·d in native sample code values. There is no automatic division by bit depth. Enabled chroma adds two separate SADs at their actual subsampled sizes. An 8×8 block differing by 1 on every plane therefore gives 64 for GRAY, 96 for YUV420, 128 for YUV422, and 192 for YUV444. These values are the same for a difference of one code value at 8, 10, or 16 bits; equal normalized brightness changes need larger code-value differences at higher precision.
+
+Integer SATD sums each 4×4 Hadamard cell's absolute coefficients divided by 2. Constant difference 1 gives 32 over an 8×8 luma block; a single differing sample gives SAD=1 and SATD=8. Chroma still contributes pixel SAD. Float SAD/SATD encode each complete plane error separately on the 65535 scale before adding planes; see the float error section in [Analyse](../analyse.md).
+
+These exact GRAY8 8×8 examples distinguish selected metrics:
+
+| Constant source/reference | SAD | SATD | DCT (DC weight 4) | Local SAD/DCT (DC weight 1) | Local SAD/SATD |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 / 1 | 64 | 32 | 0 | 32 | 48 |
+| 0 / 4 | 256 | 128 | 32 | 132 | 192 |
+
+Both local examples use weight=0.5 and threshold=0. DCT quantizes each block independently: DC uses integer `sum/(2A)`, so 0 and 1 have the same quantized DC. Global Analyse with only one level uses SAD. On the 0/4 example, Recalculate's fixed global weight gives 144 for SAD/DCT, 192 for SAD/SATD, and 224 for the half-global SATD mixture. Neither a mode name nor a smaller raw error implies a better motion estimate.
+
+For Compensate/Degrain `thsad` and scene `thscd1`, let A be luma block area, C be 1 without analysis chroma or `1+2/(rx·ry)` with it, and D be `(2^min(bits,16)-1)/255`. A nonnegative user threshold t scales to:
+
+```text
+T = floor(t · (A/64) · C · D + 0.5)
+```
+
+The analysis descriptor supplies bits and chroma, even when the renderer uses a clip of another precision. For GRAY 8×8, t=400 yields T=400 at 8 bits, 1605 at 10 bits, and 102800 for float analysis. This scales the user threshold's units; it does not convert SATD, DCT, or mixed errors into SAD.
+
+Recalculate preserves a different rounding order: first round precision as `trunc(t·D+0.5)`, then multiply by A and truncate division by 64, then, if chroma is enabled, add `2·trunc(T/(rx·ry))`. For a 4×4 YUV420 block at 10 bits and t=1, its threshold is 1 while the render/scene threshold is 2. Do not consolidate these formulas as an arithmetic cleanup.
+
+| Consumer or decision | At error E equal to threshold T |
+| --- | --- |
+| Compensate block | Uses the current block; reference requires E<T |
+| Degrain reliability | Zero; a reference contributes only below T |
+| Scene bad-block count, also used by Flow | Block is not bad; bad requires E>T |
+| Recalculate refinement | Keeps the mapped vector and newly measured error; search requires E>T |
+
+A scene cut additionally requires bad-block count to be strictly greater than the percentage-derived count threshold. These equality rules are independent of the selected metric.
+
 ## Three states and malformed data
 
 1. Invalid scalar values give **InvalidMetadata**, without reading arrays.
