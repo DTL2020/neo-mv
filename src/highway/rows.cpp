@@ -526,7 +526,7 @@ HWY_INLINE std::int64_t PackedSmallSad(const T* a, std::ptrdiff_t as, const T* b
       sum = hn::Add(sum, hn::SumsOf8AbsDiff(hn::LoadU(d, pa + x), hn::LoadU(d, pb + x)));
     return static_cast<std::int64_t>(hn::ReduceSum(wide, sum));
   } else {
-    const hn::CappedTag<T, 8> d;
+    const hn::CappedTag<T, Width == 4 ? 16 : 8> d;
     const hn::Repartition<std::int32_t, decltype(d)> wide;
     auto sum = hn::Zero(wide);
     for (int x = 0; x < count; x += int(hn::Lanes(d)))
@@ -1061,6 +1061,8 @@ HWY_NOINLINE std::int64_t MetricKnown(const T *a, std::ptrdiff_t as, const T *b,
           return FixedShortSad<64, 64>(a, as, b, bs);
         if (w == 128 && h == 128 && 128 % hn::Lanes(hn::CappedTag<std::uint16_t, 128>{}) == 0)
           return FixedShortSad<128, 128>(a, as, b, bs);
+        if (w == 4 && h == 4 && 16 % hn::Lanes(hn::CappedTag<std::uint16_t, 16>{}) == 0)
+          return PackedSmallSad<T, 4>(a, as, b, bs);
         if (w >= 12 && w % 4 == 0 && h % 4 == 0) {
           if (w < 16)
             return SmallShortSad(hn::CappedTag<std::uint16_t, 8>{}, a, as, b, bs, w, h);
