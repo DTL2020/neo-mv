@@ -567,7 +567,10 @@ template <class T> void additional_square_metrics() {
 
 template <class T>
 void rectangular_metrics() {
-  for (auto shape : {std::pair{4, 8}, {8, 16}}) {
+  for (auto shape : {std::pair{4, 8}, {6, 12},  {6, 24},  {8, 32},  {12, 6},  {12, 16}, {12, 24}, {12, 48}, {16, 12},
+                     {16, 24},        {16, 32}, {16, 64}, {24, 6},  {24, 12}, {24, 16}, {24, 32}, {24, 48}, {32, 8},
+                     {32, 24},        {32, 64}, {48, 12}, {48, 24}, {48, 64}, {64, 16}, {64, 48}, {4, 6},   {6, 4},
+                     {4, 16},         {16, 4},  {6, 8},   {8, 6},   {8, 12},  {12, 8},  {8, 16}}) {
     const auto [w, h] = shape;
     GuardBuffer<T> source(w, h), reference(w, h);
     auto a = source.view(), b = reference.view();
@@ -577,9 +580,11 @@ void rectangular_metrics() {
         b.row(y)[x] = T((x * 13 + y * 31 + 7) % 251);
       }
     for (auto metric : {neo_mv::BlockMetric::sad, neo_mv::BlockMetric::satd}) {
-      if (metric == neo_mv::BlockMetric::satd && (w % 4 || h % 4)) continue;
+      if (metric == neo_mv::BlockMetric::satd && (w % 4 || h % 4))
+        continue;
       check(neo_mv::block_metric(source.read(), reference.read(), metric) ==
-            neo_mv::simd::block_metric(source.read(), reference.read(), metric), "rectangle guarded metric");
+                neo_mv::simd::block_metric(source.read(), reference.read(), metric),
+            "rectangle guarded metric");
     }
   }
 }

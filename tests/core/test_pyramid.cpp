@@ -63,7 +63,7 @@ void geometry() {
   };
   invalid([](auto& v) { v.width = 7; });
   invalid([](auto& v) { v.width = 63; });
-  invalid([](auto& v) { v.block_width = 12; });
+  invalid([](auto& v) { v.block_width = 10; });
   invalid([](auto& v) { v.overlap_x = 5; });
   invalid([](auto& v) { v.overlap_x = 1; });
   invalid([](auto& v) { v.pad_x = 0; });

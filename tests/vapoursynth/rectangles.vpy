@@ -5,11 +5,27 @@ core = vs.core
 core.num_threads = 4
 core.std.LoadPlugin(path=plugin)
 mv = core.neo_mv
-SHAPES = [(4, 8), (8, 16)]
+SHAPES = [
+    (4, 6), (4, 8), (4, 16), (6, 4), (6, 8), (6, 12),
+    (6, 24), (8, 6), (8, 12), (8, 16), (8, 32), (12, 6),
+    (12, 8), (12, 16), (12, 24), (12, 48), (16, 4), (16, 12),
+    (16, 24), (16, 32), (16, 64), (24, 6), (24, 12), (24, 16),
+    (24, 32), (24, 48), (32, 8), (32, 24), (32, 64), (48, 12),
+    (48, 24), (48, 64), (64, 16), (64, 48),
+]
 
 
 def nodes(value):
     return [value] if isinstance(value, vs.VideoNode) else list(value)
+
+
+def rejects(call, fragment):
+    try:
+        call()
+    except vs.Error as error:
+        assert fragment in str(error), str(error)
+    else:
+        raise AssertionError('invalid geometry accepted')
 
 
 def check_vectors(node, shape):
@@ -27,9 +43,12 @@ def same_pixels(node, source):
         for p in range(len(expected)):
             a, b = actual[p], expected[p]
             assert a.shape == b.shape
+            if bytes(a) == bytes(b):
+                continue
+            assert source.format.sample_type == vs.FLOAT
             # At most four overlap weights, each rounded to 1/2048.
             # Their combined error is at most 2/2048 for samples in [0, 1].
-            tolerance = 2/2048 + 1e-6 if source.format.sample_type == vs.FLOAT else 0
+            tolerance = 2/2048 + 1e-6
             assert all(abs(a[y, x] - b[y, x]) <= tolerance
                        for y in range(b.shape[0]) for x in range(b.shape[1]))
 
@@ -56,12 +75,9 @@ for bw, bh in SHAPES:
                     if metric == 'dct' and info.sample_type == vs.FLOAT:
                         continue
                     if metric == 'satd' and (bw % 4 or bh % 4):
-                        try:
-                            mv.Analyse(s, metric=metric)
-                        except vs.Error as error:
-                            assert 'divisible by 4' in str(error)
-                        else:
-                            raise AssertionError('invalid SATD geometry accepted')
+                        rejects(lambda: mv.Analyse(s, metric=metric), 'divisible by 4')
+                        rejects(lambda: mv.AnalyseMany(s, metric=metric), 'divisible by 4')
+                        rejects(lambda: mv.Recalculate(s, v, metric=metric), 'divisible by 4')
                         continue
                     v = nodes(mv.AnalyseMany(s, radius=1, metric=metric, badrange=0))
                     r = nodes(mv.Recalculate(s, v, metric=metric, thsad=0))
@@ -99,6 +115,17 @@ for bw, bh in SHAPES:
     f = v.get_frame(0)
     assert f.props['MVUtensilsAnalysisVectors'][0] == 1
     assert f.props['MVUtensilsAnalysisSAD'][0] == 0
+
+# Follow a whole documented chain, then reject its unsupported endpoint.
+c = core.std.BlankClip(width=194, height=258, format=vs.GRAY8, length=3)
+s = mv.Super(c, blksize=[48, 64], overlap=0, pel=1)
+v = nodes(mv.AnalyseMany(s, radius=1))
+for shape in ((24, 32), (12, 16), (6, 8)):
+    v = nodes(mv.Recalculate(s, v, blksize=list(shape), overlap=0, thsad=0))
+    for node in v:
+        check_vectors(node, shape)
+        same_pixels(mv.Compensate(c, s, node), c)
+rejects(lambda: mv.Recalculate(s, v, blksize=[3, 4], overlap=0), 'block')
 
 print('Rectangular block checks passed')
 c.set_output()

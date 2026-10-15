@@ -166,7 +166,7 @@ $$e_Y=\sum_{cells}\left\lfloor\frac{\sum_{a,b}|F_{a,b}|}{2}\right\rfloor.$$
 
 A `4×4` cell of differences all 1 has SAD 16 and only one nonzero transform coefficient, 16, giving SATD 8. One isolated difference of 1 has SAD 1 and sixteen absolute coefficients of 1, also giving SATD 8. SATD is not a fixed scaling of SAD.
 
-Larger blocks do not use one large transform. `6×6` and `16×2` cannot be tiled this way and disallow SATD. U/V always use SAD. The property remains named `AnalysisSAD` even when luma uses SATD.
+Larger blocks do not use one large transform. Both block dimensions must be divisible by 4; every other shape disallows SATD. U/V always use SAD. The property remains named `AnalysisSAD` even when luma uses SATD.
 
 #### Luma DCT: quantize each block, then compare coefficients
 
@@ -592,7 +592,7 @@ Int32 values saturate to signed 32-bit range before validation. Booleans use the
 | `metric_threshold` | Local only; default 1/32, [0,1] | Relative luma-sum change threshold; Q16 quantization |
 | `prefix` | `MVUtensils` | Select Super data and name analysis properties |
 
-One-element blksize/overlap arrays duplicate to both axes; two mean horizontal/vertical. Explicit empty arrays inherit corresponding Super values; more than two fail. Supported block pairs are `4×4,6×6,8×4,8×8,12×12,16×2,16×8,16×16,24×24,32×16,32×32,48×48,64×32,64×64,128×64,128×128`, still subject to geometry/chroma alignment.
+One-element blksize/overlap arrays duplicate to both axes; two mean horizontal/vertical. Explicit empty arrays inherit corresponding Super values; more than two fail. Supported block pairs are listed in the [Super API support matrix](../../api/en/super.md#axis-arrays-and-block-sizes), still subject to geometry/chroma alignment.
 
 ## 7. Boundaries, missing data, and errors
 

@@ -289,7 +289,14 @@ for metric, ae, re in [('sad',256,256), ('satd',128,128), ('dct',32,32),
 print(f'AviSynth {a.backend}: {count} cases including metric contracts passed.')
 
 # Rectangular blocks: non-square metadata, partial edges and distinct references.
-for bw, bh in [(4,8), (8,16)]:
+for bw, bh in [
+    (4, 6), (4, 8), (4, 16), (6, 4), (6, 8), (6, 12),
+    (6, 24), (8, 6), (8, 12), (8, 16), (8, 32), (12, 6),
+    (12, 8), (12, 16), (12, 24), (12, 48), (16, 4), (16, 12),
+    (16, 24), (16, 32), (16, 64), (24, 6), (24, 12), (24, 16),
+    (24, 32), (24, 48), (32, 8), (32, 24), (32, 64), (48, 12),
+    (48, 24), (48, 64), (64, 16), (64, 48),
+]:
     w,h=4*bw+2,4*bh+2
     for pel in (1,2,4):
         for metric in ('sad','satd','dct'):

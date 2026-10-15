@@ -44,7 +44,22 @@ Write Boolean values as `True`/`False` in VapourSynth scripts and `true`/`false`
 
 **An empty array is different from an omitted argument.** You must still supply `blksize` and `overlap`, even though explicit empty arrays have fallback values.
 
-Supported block sizes are `4×8`, `8×16`, `4×4`, `6×6`, `8×4`, `8×8`, `12×12`, `16×2`, `16×8`, `16×16`, `24×24`, `32×16`, `32×32`, `48×48`, `64×32`, `64×64`, `128×64`, and `128×128`. Width and height are not interchangeable.
+Supported block sizes (width → allowed heights):
+
+| Width | Heights |
+| --- | --- |
+| 4 | 4, 6, 8, 16 |
+| 6 | 4, 6, 8, 12, 24 |
+| 8 | 4, 6, 8, 12, 16, 32 |
+| 12 | 6, 8, 12, 16, 24, 48 |
+| 16 | 2, 4, 8, 12, 16, 24, 32, 64 |
+| 24 | 6, 12, 16, 24, 32, 48 |
+| 32 | 8, 16, 24, 32, 64 |
+| 48 | 12, 24, 48, 64 |
+| 64 | 16, 32, 48, 64 |
+| 128 | 64, 128 |
+
+Width and height are not interchangeable. Recalculate half-size refinement requires the resulting pair to appear in this table; for example, 48×64 → 24×32 → 12×16 → 6×8 is supported, but 3×4 is not. SATD and SATD mixtures require both dimensions divisible by 4. Integer SAD and DCT support every listed pair.
 
 The input width and height must be at least the corresponding block dimensions. YUV image dimensions, block dimensions, and overlaps must be divisible by the chroma subsampling ratio on each axis. For example, YUV420 requires even block dimensions and overlaps on both axes. Image dimensions do not have to be multiples of the block dimensions.
 

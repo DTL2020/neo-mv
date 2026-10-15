@@ -80,7 +80,7 @@ void geometry() {
     rejects([&] { validate_render_geometry(clip, super, 5, bad, 5); });
   }
   auto bad = m;
-  bad.block_width = 6; // metadata permits this; render block-size table does not
+  bad.block_width = 10; // metadata permits this; render block-size table does not
   CHECK(valid_analysis_metadata(bad));
   rejects([&] { validate_render_geometry(clip, super, 5, bad, 5); });
   bad = m;
