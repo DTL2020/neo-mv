@@ -520,13 +520,23 @@ std::int64_t SmallByteSad(D d, const std::uint8_t *a, std::ptrdiff_t as, const s
 #endif
 
 #if HWY_TARGET != HWY_SCALAR
-template <class D, class V> HWY_INLINE V ByteSatdHorizontal(D d, V row) {
+template <class D, class V>
+HWY_INLINE V ByteSatdHorizontal(D d, V row) {
   const hn::Repartition<std::int32_t, D> pairs;
   const auto adjacent = hn::Reverse2(d, row);
+#if HWY_COMPILER_MSVC && HWY_ARCH_X86
+  const auto even = hn::Set(pairs, 0x0000FFFF);
+  const auto sum = hn::BitCast(pairs, hn::Add(row, adjacent));
+  const auto difference = hn::BitCast(pairs, hn::Sub(row, adjacent));
+  // MSVC spills the signed/unsigned copies in the 16-bit OddEven helper.
+  // Select in 32-bit pairs to keep the intermediates in registers.
+  row = hn::BitCast(d, hn::Or(hn::And(sum, even), hn::AndNot(even, difference)));
+#else
   row = hn::OddEven(hn::Sub(row, adjacent), hn::Add(row, adjacent));
-  const auto opposite = hn::Reverse4(d, hn::Reverse2(d, row));
-  return hn::BitCast(d, hn::OddEven(hn::BitCast(pairs, hn::Sub(row, opposite)),
-                                   hn::BitCast(pairs, hn::Add(row, opposite))));
+#endif
+  const auto opposite = hn::BitCast(d, hn::Reverse2(pairs, hn::BitCast(pairs, row)));
+  return hn::BitCast(
+      d, hn::OddEven(hn::BitCast(pairs, hn::Sub(row, opposite)), hn::BitCast(pairs, hn::Add(row, opposite))));
 }
 
 template <class D>
@@ -573,6 +583,25 @@ std::int64_t ByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::
     }
   }
   return total;
+}
+
+template <class D>
+std::int64_t PackedByteSatd8(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b, std::ptrdiff_t bs) {
+  const hn::Rebind<std::uint8_t, D> bytes;
+  const hn::Half<decltype(bytes)> row;
+  const hn::Repartition<std::int32_t, D> wide;
+  // With 16 lanes, the two halves hold rows y and y+4. Loads stay
+  // within each eight-byte row; each four-lane cell remains independent.
+  const auto load = [&](const std::uint8_t* p, std::ptrdiff_t stride) {
+    return hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, p + 4 * stride), hn::LoadU(row, p)));
+  };
+  const auto residual = [&](int y) {
+    return ByteSatdHorizontal(d, hn::Sub(load(a + y * as, as), load(b + y * bs, bs)));
+  };
+  auto r0 = residual(0), r1 = residual(1), r2 = residual(2), r3 = residual(3);
+  Hadamard(r0, r1, r2, r3);
+  const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
+  return hn::ReduceSum(wide, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1))) / 2;
 }
 #endif
 
@@ -733,8 +762,12 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
 #if HWY_TARGET != HWY_SCALAR
   if constexpr (std::is_same_v<T, std::uint8_t>) {
     if (satd && w <= 128 && h <= 128) {
-      if (w == 8 && h == 8)
+      if (w == 8 && h == 8) {
+        const hn::CappedTag<std::int16_t, 16> packed;
+        if (hn::Lanes(packed) == 16)
+          return PackedByteSatd8(packed, a, as, b, bs);
         return ByteSatd<8, 8>(hn::CappedTag<std::int16_t, 8>{}, a, as, b, bs, w, h);
+      }
       if (w < 8)
         return ByteSatd(hn::CappedTag<std::int16_t, 4>{}, a, as, b, bs, w, h);
       if (w < 16)
