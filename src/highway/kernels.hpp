@@ -450,7 +450,7 @@ public:
       const bool six420 = chroma_ && ratio_x_ == 2 && ratio_y_ == 2 &&
           !block_.planes[0].satd && block_.planes[0].width == 6 && block_.planes[0].height == 6;
       const bool bounded420 = bounded_metric_batch_ &&
-          (block_.planes[0].width == 16 || (std::is_same_v<T, std::uint16_t> && block_.planes[0].width == 8));
+          (block_.planes[0].width == 16 || block_.planes[0].width == 8);
       bool admitted = (gray || six420 || bounded420) &&
           pel == block_.pel && lambda >= 0 && lambda <= INT32_MAX &&
           omega.left >= INT32_MIN && omega.top >= INT32_MIN && omega.right <= std::int64_t(INT32_MAX) + 1 &&
