@@ -436,7 +436,8 @@ public:
     if constexpr (std::is_integral_v<T>) {
       // Prove the cost bound once for all candidates, including out-of-domain
       // seeds. These 420 and gray SAD blocks have at most 384 samples, each
-      // at most 65535; with these vector and lambda bounds the distance
+      // at most 65535. Byte 8x8 SATD is bounded by 64*8*255 plus chroma SAD,
+      // which is smaller. With these vector and lambda bounds the distance
       // product is below 2^62. Penalties and
       // their sum cannot overflow. Other cases retain checked evaluation.
       const auto near = [&](std::int64_t x, std::int64_t y) {
@@ -451,7 +452,9 @@ public:
           !block_.planes[0].satd && block_.planes[0].width == 6 && block_.planes[0].height == 6;
       const bool bounded420 = bounded_metric_batch_ &&
           (block_.planes[0].width == 16 || block_.planes[0].width == 8);
-      bool admitted = (gray || six420 || bounded420) &&
+      const bool satd420 = std::is_same_v<T, std::uint8_t> && chroma_ && ratio_x_ == 2 && ratio_y_ == 2 &&
+          block_.planes[0].satd && block_.planes[0].width == 8 && block_.planes[0].height == 8;
+      bool admitted = (gray || six420 || bounded420 || satd420) &&
           pel == block_.pel && lambda >= 0 && lambda <= INT32_MAX &&
           omega.left >= INT32_MIN && omega.top >= INT32_MIN && omega.right <= std::int64_t(INT32_MAX) + 1 &&
           omega.bottom <= std::int64_t(INT32_MAX) + 1 && omega.left < omega.right && omega.top < omega.bottom &&

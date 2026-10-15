@@ -1258,14 +1258,30 @@ HWY_INLINE MetricRequest<T> MotionPlane(const MotionMetricRequest<T>& block,
   return r;
 }
 
-template <class T, int LumaWidth, bool Bounded = true, int Pel = 0>
+template <class T, int LumaWidth, bool Bounded = true, int Pel = 0, bool Satd = false>
 HWY_INLINE bool MotionMetric420Bounded(const MotionMetricRequest<T>& block, const MetricReferenceFrames<T>& frames,
                             int vx, int vy, std::int64_t limit, std::int64_t* errors) {
   const int pel = Pel == 0 ? block.pel : Pel;
   const auto qx = MotionQuotient(vx, pel), qy = MotionQuotient(vy, pel);
   const auto phase = std::size_t((vy - pel * qy) * pel + vx - pel * qx);
   const auto y = MotionPlane(block, frames, 0, qx, qy, phase);
-  errors[0] = MotionSad420Plane<T, LumaWidth, Bounded, (Pel != 0)>(y, limit);
+  if constexpr (Satd) {
+    static_assert(std::is_same_v<T, std::uint8_t> && LumaWidth == 8);
+#if HWY_TARGET != HWY_SCALAR
+    const hn::CappedTag<std::int16_t, 16> packed;
+    if (hn::Lanes(packed) == 16)
+      errors[0] = PackedByteSatd<8>(packed, y.source, y.source_stride, y.reference, y.reference_stride);
+    else
+      errors[0] = ByteSatd<8, 8>(hn::CappedTag<std::int16_t, 8>{}, y.source, y.source_stride,
+                                  y.reference, y.reference_stride, 8, 8);
+#else
+    errors[0] = MetricKnown<T, true>(y.source, y.source_stride, y.reference, y.reference_stride, 8, 8);
+#endif
+  } else {
+    errors[0] = MotionSad420Plane<T, LumaWidth, Bounded, (Pel != 0)>(y, limit);
+  }
+  // For SATD this is the exact luma transform error, not a SAD estimate.
+  // Chroma and all admitted penalties are nonnegative, so it is a lower bound.
   if constexpr (Bounded) {
     if (errors[0] >= limit)
       return false;
@@ -1298,8 +1314,8 @@ namespace fused_motion {
 #include "core/motion/analyse-block-inl.hpp"
 #undef NEO_MV_MOTION_ATTR
 
-template <class T, int Pel, int GrayWidth = 0, int LumaWidth = 16>
-struct AnalyseSad {
+template <class T, int Pel, int GrayWidth = 0, int LumaWidth = 16, bool Satd = false>
+struct AnalyseInteger {
   const MotionMetricRequest<T>& block;
   const MetricReferenceFrames<T>& frames;
 
@@ -1315,7 +1331,7 @@ struct AnalyseSad {
       errors[1] = errors[2] = 0;
       return !Bounded || errors[0] < limit;
     } else {
-      return MotionMetric420Bounded<T, LumaWidth, Bounded, Pel>(block, frames, vector.x, vector.y, limit, errors);
+      return MotionMetric420Bounded<T, LumaWidth, Bounded, Pel, Satd>(block, frames, vector.x, vector.y, limit, errors);
     }
   }
   HWY_INLINE BlockError operator()(MotionVector vector) const {
@@ -1350,12 +1366,12 @@ struct AnalyseSad {
 };
 } // namespace fused_motion
 
-template <class T, int Pel, int Width = 16>
+template <class T, int Pel, int Width = 16, bool Satd = false>
 SearchResult AnalyseBlock420(const MotionMetricRequest<T>& block, const MetricReferenceFrames<T>& frames,
                              MotionTriple predictor, const SpatialPredictors& spatial, MotionVector zero,
                              CandidateDomain omega, int layer, std::int64_t lambda,
                              std::int64_t bad_threshold, AnalyseControls controls) {
-  fused_motion::AnalyseSad<T, Pel, 0, Width> execution{block, frames};
+  fused_motion::AnalyseInteger<T, Pel, 0, Width, Satd> execution{block, frames};
   return fused_motion::block_impl(predictor, spatial, zero, omega, layer, Pel, lambda, bad_threshold,
                                   controls, execution);
 }
@@ -1364,6 +1380,15 @@ SearchResult AnalyseBlock420(const MotionMetricRequest<T>& block, const MetricRe
                              MotionTriple predictor, const SpatialPredictors& spatial, MotionVector zero,
                              CandidateDomain omega, int layer, std::int64_t lambda,
                              std::int64_t bad_threshold, AnalyseControls controls) {
+  if constexpr (std::is_same_v<T, std::uint8_t>) {
+    if (block.planes[0].satd) {
+      if (block.pel == 1)
+        return AnalyseBlock420<T, 1, 8, true>(block, frames, predictor, spatial, zero, omega, layer, lambda, bad_threshold, controls);
+      if (block.pel == 2)
+        return AnalyseBlock420<T, 2, 8, true>(block, frames, predictor, spatial, zero, omega, layer, lambda, bad_threshold, controls);
+      return AnalyseBlock420<T, 4, 8, true>(block, frames, predictor, spatial, zero, omega, layer, lambda, bad_threshold, controls);
+    }
+  }
   if (block.planes[0].width == 8) {
     if (block.pel == 1)
       return AnalyseBlock420<T, 1, 8>(block, frames, predictor, spatial, zero, omega, layer, lambda, bad_threshold, controls);
@@ -1399,7 +1424,7 @@ SearchResult AnalyseBlockGray(const MotionMetricRequest<T>& block,
     const MetricReferenceFrames<T>& frames, MotionTriple predictor,
     const SpatialPredictors& spatial, MotionVector zero, CandidateDomain omega, int layer,
     std::int64_t lambda, std::int64_t bad_threshold, AnalyseControls controls) {
-  fused_motion::AnalyseSad<T, Pel, Width> execution{block, frames};
+  fused_motion::AnalyseInteger<T, Pel, Width> execution{block, frames};
   return fused_motion::block_impl(predictor, spatial, zero, omega, layer, Pel, lambda,
                                   bad_threshold, controls, execution);
 }

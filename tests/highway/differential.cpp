@@ -253,7 +253,9 @@ template <class T> void sampled_motion(int block_width = 8) {
     }
   }
 }
-template <class T> void fused_analyse_block(int gray_width = 0, int chroma_width = 16) {
+template <class T>
+void fused_analyse_block(int gray_width = 0, int chroma_width = 16,
+                         neo_mv::BlockMetric metric = neo_mv::BlockMetric::sad) {
   using namespace neo_mv;
   for (int pel : {1, 2, 4}) {
     const bool gray = gray_width != 0;
@@ -282,18 +284,19 @@ template <class T> void fused_analyse_block(int gray_width = 0, int chroma_width
         }
       }
       validate_sampling_frames(f.geometry, f.frames);
-      auto owned = simd::PreparedBlockError<T>(f.geometry, region, f.frames, BlockMetric::sad);
+      auto owned = simd::PreparedBlockError<T>(f.geometry, region, f.frames, metric);
       auto frames = simd::PreparedSamplingFrames<T>(f.geometry, f.frames);
-      auto borrowed = simd::PreparedBlockError<T, false>(f.geometry, region, frames, BlockMetric::sad);
+      auto borrowed = simd::PreparedBlockError<T, false>(f.geometry, region, frames, metric);
       auto copied = borrowed;
       const auto scalar = [&](MotionVector v) {
-        return block_error<T, true>(f.geometry, region, f.frames, v, BlockMetric::sad);
+        return block_error<T, true>(f.geometry, region, f.frames, v, metric);
       };
       for (int search = 0; search <= 5; ++search)
         for (int scenario = 0; scenario < 5; ++scenario) {
           const std::int64_t lambdas[] = {0, 17, INT32_MAX, std::int64_t(INT32_MAX) + 1, INT64_MAX};
           const auto lambda = lambdas[scenario];
           AnalyseControls c;
+          c.metric = metric == BlockMetric::satd ? MotionMetric::satd : MotionMetric::sad;
           c.search = search;
           c.searchparam = c.pelsearch = 3;
           c.trymany = scenario % 3;
@@ -652,6 +655,7 @@ int main() {
         fused_analyse_block<std::uint8_t>(width);
       fused_analyse_block<std::uint16_t>();
       fused_analyse_block<std::uint8_t>(0, 8);
+      fused_analyse_block<std::uint8_t>(0, 8, neo_mv::BlockMetric::satd);
       fused_analyse_block<std::uint16_t>(0, 8);
       fused_analyse_block<std::uint8_t>(0, 6);
       fused_analyse_block<std::uint16_t>(0, 6);
