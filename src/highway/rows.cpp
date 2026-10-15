@@ -480,6 +480,24 @@ HWY_INLINE std::int64_t FixedByteSad(const std::uint8_t *a, std::ptrdiff_t as, c
   else
     return static_cast<std::int64_t>(hn::ReduceSum(wide, hn::Add(hn::Add(sum0, sum1), hn::Add(sum2, sum3))));
 }
+// The source is a tight block prepared once per search; reference rows remain
+// strided. Pairing rows fills the vector without reading reference padding.
+template <int Width>
+HWY_INLINE std::int64_t PairedByteSad(const std::uint8_t* a, const std::uint8_t* b, std::ptrdiff_t bs) {
+  const hn::CappedTag<std::uint8_t, 2 * Width> d;
+  const hn::Half<decltype(d)> half;
+  const hn::Repartition<std::uint64_t, decltype(d)> wide;
+  if (hn::Lanes(d) != 2 * Width)
+    return FixedByteSad<Width, Width>(a, Width, b, bs);
+  auto sum0 = hn::Zero(wide), sum1 = sum0;
+  for (int y = 0; y < Width; y += 4) {
+    const auto r0 = hn::Combine(d, hn::LoadU(half, b + (y + 1) * bs), hn::LoadU(half, b + y * bs));
+    const auto r1 = hn::Combine(d, hn::LoadU(half, b + (y + 3) * bs), hn::LoadU(half, b + (y + 2) * bs));
+    sum0 = hn::Add(sum0, hn::SumsOf8AbsDiff(hn::LoadU(d, a + y * Width), r0));
+    sum1 = hn::Add(sum1, hn::SumsOf8AbsDiff(hn::LoadU(d, a + (y + 2) * Width), r1));
+  }
+  return static_cast<std::int64_t>(hn::ReduceSum(wide, hn::Add(sum0, sum1)));
+}
 HWY_INLINE std::int64_t FixedByteSad12(const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b,
                                        std::ptrdiff_t bs) {
   const hn::CappedTag<std::uint8_t, 16> d;
@@ -1258,13 +1276,19 @@ HWY_INLINE MetricRequest<T> MotionPlane(const MotionMetricRequest<T>& block,
   return r;
 }
 
-template <class T, int LumaWidth, bool Bounded = true, int Pel = 0, bool Satd = false>
+template <class T, int LumaWidth, bool Bounded = true, int Pel = 0, bool Satd = false, bool PackedSource = false>
 HWY_INLINE bool MotionMetric420Bounded(const MotionMetricRequest<T>& block, const MetricReferenceFrames<T>& frames,
                             int vx, int vy, std::int64_t limit, std::int64_t* errors) {
   const int pel = Pel == 0 ? block.pel : Pel;
   const auto qx = MotionQuotient(vx, pel), qy = MotionQuotient(vy, pel);
   const auto phase = std::size_t((vy - pel * qy) * pel + vx - pel * qx);
   const auto y = MotionPlane(block, frames, 0, qx, qy, phase);
+#if HWY_TARGET != HWY_SCALAR
+  if constexpr (PackedSource) {
+    static_assert(std::is_same_v<T, std::uint8_t> && LumaWidth == 8 && !Satd);
+    errors[0] = PairedByteSad<LumaWidth>(y.source, y.reference, y.reference_stride);
+  } else
+#endif
   if constexpr (Satd) {
     static_assert(std::is_same_v<T, std::uint8_t> && LumaWidth == 8);
 #if HWY_TARGET != HWY_SCALAR
@@ -1297,7 +1321,9 @@ HWY_INLINE bool MotionMetric420Bounded(const MotionMetricRequest<T>& block, cons
   const auto cx = MotionQuotient(tx, pel), cy = MotionQuotient(ty, pel);
   const auto chroma_phase = std::size_t((ty - pel * cy) * pel + tx - pel * cx);
   for (int k = 1; k < 3; ++k) {
-    const auto r = MotionPlane(block, frames, k, cx, cy, chroma_phase);
+    auto r = MotionPlane(block, frames, k, cx, cy, chroma_phase);
+    if constexpr (PackedSource)
+      r.source_stride = LumaWidth / 2;
     errors[k] = MotionSad420Plane<T, LumaWidth / 2, false, (Pel != 0)>(r, limit);
     if constexpr (Bounded) {
       if (errors[k] >= limit)
@@ -1317,7 +1343,7 @@ namespace fused_motion {
 #include "core/motion/analyse-block-inl.hpp"
 #undef NEO_MV_MOTION_ATTR
 
-template <class T, int Pel, int GrayWidth = 0, int LumaWidth = 16, bool Satd = false>
+template <class T, int Pel, int GrayWidth = 0, int LumaWidth = 16, bool Satd = false, bool PackedSource = false>
 struct AnalyseInteger {
   const MotionMetricRequest<T>& block;
   const MetricReferenceFrames<T>& frames;
@@ -1334,7 +1360,7 @@ struct AnalyseInteger {
       errors[1] = errors[2] = 0;
       return !Bounded || errors[0] < limit;
     } else {
-      return MotionMetric420Bounded<T, LumaWidth, Bounded, Pel, Satd>(block, frames, vector.x, vector.y, limit, errors);
+      return MotionMetric420Bounded<T, LumaWidth, Bounded, Pel, Satd, PackedSource>(block, frames, vector.x, vector.y, limit, errors);
     }
   }
   HWY_INLINE BlockError operator()(MotionVector vector) const {
@@ -1374,9 +1400,28 @@ SearchResult AnalyseBlock420(const MotionMetricRequest<T>& block, const MetricRe
                              MotionTriple predictor, const SpatialPredictors& spatial, MotionVector zero,
                              CandidateDomain omega, int layer, std::int64_t lambda,
                              std::int64_t bad_threshold, AnalyseControls controls) {
-  fused_motion::AnalyseInteger<T, Pel, 0, Width, Satd> execution{block, frames};
-  return fused_motion::block_impl(predictor, spatial, zero, omega, layer, Pel, lambda, bad_threshold,
-                                  controls, execution);
+  if constexpr (std::is_same_v<T, std::uint8_t> && Width == 8 && !Satd) {
+    HWY_ALIGN std::uint8_t source[Width * Width * 3 / 2];
+    auto packed = block;
+    for (int y = 0; y < Width; ++y)
+      hwy::CopyBytes<Width>(block.planes[0].source + y * block.planes[0].source_stride, source + y * Width);
+    packed.planes[0].source = source;
+    packed.planes[0].source_stride = Width;
+    for (int k = 1; k < 3; ++k) {
+      auto* dst = source + Width * Width + (k - 1) * (Width * Width / 4);
+      for (int y = 0; y < Width / 2; ++y)
+        hwy::CopyBytes<Width / 2>(block.planes[k].source + y * block.planes[k].source_stride, dst + y * (Width / 2));
+      packed.planes[k].source = dst;
+      packed.planes[k].source_stride = Width / 2;
+    }
+    fused_motion::AnalyseInteger<T, Pel, 0, Width, Satd, true> execution{packed, frames};
+    return fused_motion::block_impl(predictor, spatial, zero, omega, layer, Pel, lambda, bad_threshold,
+                                    controls, execution);
+  } else {
+    fused_motion::AnalyseInteger<T, Pel, 0, Width, Satd> execution{block, frames};
+    return fused_motion::block_impl(predictor, spatial, zero, omega, layer, Pel, lambda, bad_threshold,
+                                    controls, execution);
+  }
 }
 template <class T>
 SearchResult AnalyseBlock420(const MotionMetricRequest<T>& block, const MetricReferenceFrames<T>& frames,
