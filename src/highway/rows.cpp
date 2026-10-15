@@ -592,6 +592,29 @@ HWY_INLINE V IntegerSatdHorizontal(D d, V row) {
   return hn::Add(row, hn::IfNegativeThenNegOrUndefIfZero(oppositeSign, opposite));
 }
 
+template <class D>
+std::int64_t PackedByteSatd4(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::uint8_t* b,
+                            std::ptrdiff_t bs) {
+  HWY_ALIGN std::uint8_t pa[16], pb[16];
+  for (int y = 0; y < 4; ++y) {
+    hwy::CopyBytes<4>(a + y * as, pa + 4 * y);
+    hwy::CopyBytes<4>(b + y * bs, pb + 4 * y);
+  }
+  const hn::Rebind<std::uint8_t, D> pixels;
+  const hn::Repartition<std::int64_t, D> rows;
+  auto value = IntegerSatdHorizontal(d, hn::Sub(hn::PromoteTo(d, hn::LoadU(pixels, pa)),
+                                              hn::PromoteTo(d, hn::LoadU(pixels, pb))));
+  const auto adjacent = hn::BitCast(d, hn::Reverse2(rows, hn::BitCast(rows, value)));
+  const auto signs = hn::BitCast(d, hn::OddEven(hn::Set(rows, -1), hn::Set(rows, 0x0001000100010001LL)));
+  value = hn::Abs(hn::Add(value, hn::IfNegativeThenNegOrUndefIfZero(signs, adjacent)));
+  const hn::Half<D> half;
+  const hn::Repartition<std::int32_t, decltype(half)> wide;
+  // The halves hold row-pair sums and differences. Folding the last
+  // butterfly cancels division by two and leaves eight maxima.
+  const auto folded = hn::Max(hn::LowerHalf(half, value), hn::UpperHalf(half, value));
+  return hn::ReduceSum(wide, hn::WidenMulPairwiseAdd(wide, folded, hn::Set(half, 1)));
+}
+
 template <int Width, class D, class T>
 HWY_INLINE auto PaddedIntegerSatdRow(D d, const T* a, const T* b) {
   const hn::Rebind<T, D> pixels;
@@ -945,6 +968,12 @@ HWY_NOINLINE std::int64_t MetricKnown(const T *a, std::ptrdiff_t as, const T *b,
   }
   if constexpr (std::is_same_v<T, std::uint8_t>) {
     if (satd && w <= 128 && h <= 128) {
+      if (w == 4 && h == 4) {
+        const hn::CappedTag<std::int16_t, 16> packed;
+        if constexpr (hn::MaxLanes(packed) == 16)
+          if (hn::Lanes(packed) == 16)
+            return PackedByteSatd4(packed, a, as, b, bs);
+      }
       if (w == 8 && h == 8) {
         const hn::CappedTag<std::int16_t, 16> packed;
         if (hn::Lanes(packed) == 16)
