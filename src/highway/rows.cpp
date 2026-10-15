@@ -524,10 +524,13 @@ template <class D, class V>
 HWY_INLINE V ByteSatdHorizontal(D d, V row) {
   const hn::Repartition<std::int32_t, D> pairs;
   const auto adjacent = hn::Reverse2(d, row);
-  row = hn::OddEven(hn::Sub(row, adjacent), hn::Add(row, adjacent));
+  // Apply butterfly signs before adding instead of blending sums and differences.
+  // Every sign lane is +/-1, so the sign helper's zero case is never used.
+  const auto adjacentSign = hn::OddEven(hn::Set(d, -1), hn::Set(d, 1));
+  row = hn::Add(row, hn::IfNegativeThenNegOrUndefIfZero(adjacentSign, adjacent));
   const auto opposite = hn::BitCast(d, hn::Reverse2(pairs, hn::BitCast(pairs, row)));
-  return hn::BitCast(
-      d, hn::OddEven(hn::BitCast(pairs, hn::Sub(row, opposite)), hn::BitCast(pairs, hn::Add(row, opposite))));
+  const auto oppositeSign = hn::BitCast(d, hn::OddEven(hn::Set(pairs, -1), hn::Set(pairs, 0x00010001)));
+  return hn::Add(row, hn::IfNegativeThenNegOrUndefIfZero(oppositeSign, opposite));
 }
 
 template <class D>
