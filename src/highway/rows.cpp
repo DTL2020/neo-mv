@@ -632,11 +632,14 @@ std::int64_t SmallWordSatd(D d, const std::uint16_t* a, std::ptrdiff_t as, const
       auto r1 = WordSatdRow(d, a + (y + 1) * as + x, b + (y + 1) * bs + x);
       auto r2 = WordSatdRow(d, a + (y + 2) * as + x, b + (y + 2) * bs + x);
       auto r3 = WordSatdRow(d, a + (y + 3) * as + x, b + (y + 3) * bs + x);
-      Hadamard(r0, r1, r2, r3);
-      sum = hn::Add(sum, hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3))));
+      // |a+b| + |a-b| = 2*max(|a|, |b|): fold the last butterfly
+      // and SATD's division by two into two maxima.
+      const auto even = hn::Max(hn::Abs(hn::Add(r0, r1)), hn::Abs(hn::Add(r2, r3)));
+      const auto odd = hn::Max(hn::Abs(hn::Sub(r0, r1)), hn::Abs(hn::Sub(r2, r3)));
+      sum = hn::Add(sum, hn::Add(even, odd));
     }
   }
-  std::int64_t total = hn::ReduceSum(d, sum) / 2;
+  std::int64_t total = hn::ReduceSum(d, sum);
   if constexpr (hn::MaxLanes(d) > 4) {
     if (end != w) {
       // Capping preserves four-lane cells even for non-power-of-two SVE VLs.
