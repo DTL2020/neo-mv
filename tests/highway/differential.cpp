@@ -398,7 +398,7 @@ template <class T> void integer_metric_extremes() {
   // Exercise bounded SAD accumulation, both fallback dimensions, and SATD
   // reductions with full-range differences (not only random small blocks).
   for (int w : {4, 8, 12, 16, 24, 28, 32, 48, 60, 64, 124, 128, 129, 132})
-    for (int h : {4, 128, 129, 512}) {
+    for (int h : {4, 16, 32, 128, 129, 512}) {
       Buffer<T> a(w, h), b(w, h);
       for (int pattern = 0; pattern < 3; ++pattern) {
         for (int y = 0; y < h; ++y)
@@ -482,19 +482,19 @@ template <class T> void bounded_sad_thresholds() {
   }
 }
 
-void byte_satd_tails() {
+template <class T> void integer_satd_tails() {
   std::mt19937 rng(72819);
   for (int w : {4, 8, 12, 16, 20, 24, 28, 32, 36, 48, 60, 64, 124, 128, 132}) {
-    GuardBuffer<std::uint8_t> a(w, 12), b(w, 12);
+    GuardBuffer<T> a(w, 12), b(w, 12);
     for (int trial = 0; trial < 8; ++trial) {
       for (int y = 0; y < 12; ++y)
         for (int x = 0; x < w; ++x) {
-          a.view().row(y)[x] = std::uint8_t(rng());
-          b.view().row(y)[x] = std::uint8_t(rng());
+          a.view().row(y)[x] = T(rng());
+          b.view().row(y)[x] = T(rng());
         }
       check(neo_mv::block_metric(a.read(), b.read(), neo_mv::BlockMetric::satd) ==
                 neo_mv::simd::block_metric(a.read(), b.read(), neo_mv::BlockMetric::satd),
-            "byte SATD guarded tail mismatch");
+            "integer SATD guarded tail mismatch");
     }
   }
 }
@@ -621,7 +621,8 @@ int main() {
       rectangular_metrics<float>();
       guarded_statistics();
       two_cell_satd_regression();
-      byte_satd_tails();
+      integer_satd_tails<std::uint8_t>();
+      integer_satd_tails<std::uint16_t>();
       additional_square_metrics<std::uint8_t>();
       additional_square_metrics<std::uint16_t>();
       additional_square_metrics<float>();

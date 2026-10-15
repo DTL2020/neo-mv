@@ -521,22 +521,24 @@ std::int64_t SmallByteSad(D d, const std::uint8_t *a, std::ptrdiff_t as, const s
 
 #if HWY_TARGET != HWY_SCALAR
 template <class D, class V>
-HWY_INLINE V ByteSatdHorizontal(D d, V row) {
-  const hn::Repartition<std::int32_t, D> pairs;
+HWY_INLINE V IntegerSatdHorizontal(D d, V row) {
+  const hn::RepartitionToWide<D> pairs;
   const auto adjacent = hn::Reverse2(d, row);
   // Apply butterfly signs before adding instead of blending sums and differences.
   // Every sign lane is +/-1, so the sign helper's zero case is never used.
   const auto adjacentSign = hn::OddEven(hn::Set(d, -1), hn::Set(d, 1));
   row = hn::Add(row, hn::IfNegativeThenNegOrUndefIfZero(adjacentSign, adjacent));
   const auto opposite = hn::BitCast(d, hn::Reverse2(pairs, hn::BitCast(pairs, row)));
-  const auto oppositeSign = hn::BitCast(d, hn::OddEven(hn::Set(pairs, -1), hn::Set(pairs, 0x00010001)));
+  using Pair = hn::TFromD<decltype(pairs)>;
+  constexpr Pair positivePair = Pair{1} | (Pair{1} << (8 * sizeof(hn::TFromD<D>)));
+  const auto oppositeSign = hn::BitCast(d, hn::OddEven(hn::Set(pairs, -1), hn::Set(pairs, positivePair)));
   return hn::Add(row, hn::IfNegativeThenNegOrUndefIfZero(oppositeSign, opposite));
 }
 
 template <class D>
 HWY_INLINE auto ByteSatdRow(D d, const std::uint8_t* a, const std::uint8_t* b) {
   const hn::Rebind<std::uint8_t, D> bytes;
-  return ByteSatdHorizontal(d, hn::Sub(hn::PromoteTo(d, hn::LoadU(bytes, a)),
+  return IntegerSatdHorizontal(d, hn::Sub(hn::PromoteTo(d, hn::LoadU(bytes, a)),
                                       hn::PromoteTo(d, hn::LoadU(bytes, b))));
 }
 
@@ -572,7 +574,8 @@ std::int64_t ByteSatd(D d, const std::uint8_t* a, std::ptrdiff_t as, const std::
   std::int64_t total = hn::ReduceSum(wide, sum) / 2;
   if constexpr (hn::MaxLanes(d) > 4) {
     if (end != w) {
-      const hn::Half<D> half;
+      // Capping preserves four-lane cells even for non-power-of-two SVE VLs.
+      const hn::CappedTag<std::int16_t, hn::MaxLanes(d) / 2> half;
       total += ByteSatd(half, a + end, as, b + end, bs, w - end, h);
     }
   }
@@ -588,7 +591,7 @@ HWY_INLINE auto PackedByteSatdRow8(D d, const std::uint8_t* a, std::ptrdiff_t as
   // within each eight-byte row; each four-lane cell remains independent.
   const auto va = hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, a + 4 * as), hn::LoadU(row, a)));
   const auto vb = hn::PromoteTo(d, hn::Combine(bytes, hn::LoadU(row, b + 4 * bs), hn::LoadU(row, b)));
-  return ByteSatdHorizontal(d, hn::Sub(va, vb));
+  return IntegerSatdHorizontal(d, hn::Sub(va, vb));
 }
 
 template <class D>
@@ -601,6 +604,47 @@ std::int64_t PackedByteSatd8(D d, const std::uint8_t* a, std::ptrdiff_t as, cons
   Hadamard(r0, r1, r2, r3);
   const auto absolute = hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3)));
   return hn::ReduceSum(wide, hn::WidenMulPairwiseAdd(wide, absolute, hn::Set(d, 1))) / 2;
+}
+
+template <class D>
+HWY_INLINE auto WordSatdRow(D d, const std::uint16_t* a, const std::uint16_t* b) {
+  const hn::Rebind<std::uint16_t, D> words;
+  return IntegerSatdHorizontal(d, hn::Sub(hn::PromoteTo(d, hn::LoadU(words, a)),
+                                         hn::PromoteTo(d, hn::LoadU(words, b))));
+}
+
+// Keep four adjacent pixels in each cell, avoiding four-way deinterleaving.
+// For rectangles up to 32x32, even the conservative absolute coefficient
+// bound 32*32*16*65535 is below INT32_MAX, including the final reduction.
+template <int FixedWidth = 0, int FixedHeight = 0, class D>
+std::int64_t SmallWordSatd(D d, const std::uint16_t* a, std::ptrdiff_t as, const std::uint16_t* b,
+                           std::ptrdiff_t bs, int w, int h) {
+  if constexpr (FixedWidth != 0)
+    w = FixedWidth;
+  if constexpr (FixedHeight != 0)
+    h = FixedHeight;
+  const int n = int(hn::Lanes(d));
+  const int end = w / n * n;
+  auto sum = hn::Zero(d);
+  for (int y = 0; y < h; y += 4) {
+    for (int x = 0; x < end; x += n) {
+      auto r0 = WordSatdRow(d, a + y * as + x, b + y * bs + x);
+      auto r1 = WordSatdRow(d, a + (y + 1) * as + x, b + (y + 1) * bs + x);
+      auto r2 = WordSatdRow(d, a + (y + 2) * as + x, b + (y + 2) * bs + x);
+      auto r3 = WordSatdRow(d, a + (y + 3) * as + x, b + (y + 3) * bs + x);
+      Hadamard(r0, r1, r2, r3);
+      sum = hn::Add(sum, hn::Add(hn::Add(hn::Abs(r0), hn::Abs(r1)), hn::Add(hn::Abs(r2), hn::Abs(r3))));
+    }
+  }
+  std::int64_t total = hn::ReduceSum(d, sum) / 2;
+  if constexpr (hn::MaxLanes(d) > 4) {
+    if (end != w) {
+      // Capping preserves four-lane cells even for non-power-of-two SVE VLs.
+      const hn::CappedTag<std::int32_t, hn::MaxLanes(d) / 2> half;
+      total += SmallWordSatd(half, a + end, as, b + end, bs, w - end, h);
+    }
+  }
+  return total;
 }
 #endif
 
@@ -759,6 +803,21 @@ std::int64_t MetricWithTag(D d, const T *a, std::ptrdiff_t as, const T *b, std::
 template <class T>
 std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs, int w, int h, bool satd) {
 #if HWY_TARGET != HWY_SCALAR
+  if constexpr (std::is_same_v<T, std::uint16_t>) {
+    if (satd && w <= 32 && h <= 32) {
+      if (w == 8 && h == 8)
+        return SmallWordSatd<8, 8>(hn::CappedTag<std::int32_t, 8>{}, a, as, b, bs, w, h);
+      if (w == 16 && h == 16)
+        return SmallWordSatd<16, 16>(hn::CappedTag<std::int32_t, 16>{}, a, as, b, bs, w, h);
+      if (w == 32 && h == 32)
+        return SmallWordSatd<32, 32>(hn::CappedTag<std::int32_t, 16>{}, a, as, b, bs, w, h);
+      if (w < 8)
+        return SmallWordSatd(hn::CappedTag<std::int32_t, 4>{}, a, as, b, bs, w, h);
+      if (w < 16)
+        return SmallWordSatd(hn::CappedTag<std::int32_t, 8>{}, a, as, b, bs, w, h);
+      return SmallWordSatd(hn::CappedTag<std::int32_t, 16>{}, a, as, b, bs, w, h);
+    }
+  }
   if constexpr (std::is_same_v<T, std::uint8_t>) {
     if (satd && w <= 128 && h <= 128) {
       if (w == 8 && h == 8) {
