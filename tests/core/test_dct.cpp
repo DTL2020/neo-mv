@@ -60,7 +60,7 @@ std::vector<double> oracle(const std::vector<std::uint16_t>& input, int w, int h
     }
   return result;
 }
-const std::vector<std::pair<int, int>> shapes = {{4, 4},   {6, 6},   {8, 4},    {8, 8},    {12, 12}, {16, 2},
+const std::vector<std::pair<int, int>> shapes = {{4, 4},   {6, 6},   {4, 8}, {8, 16}, {8, 4},    {8, 8},    {12, 12}, {16, 2},
                                                  {16, 8},  {16, 16}, {24, 24},  {32, 16},  {32, 32}, {48, 48},
                                                  {64, 32}, {64, 64}, {128, 64}, {128, 128}};
 struct DctCase {
@@ -178,7 +178,7 @@ auto view(const std::vector<std::uint16_t>& x, int w, int h) {
 void dc_boundary() {
   for (auto size : {std::pair{4, 4},
                     {6, 6},
-                    {8, 4},
+                    {4, 8}, {8, 16}, {8, 4},
                     {8, 8},
                     {12, 12},
                     {16, 2},

@@ -287,3 +287,18 @@ for metric, ae, re in [('sad',256,256), ('satd',128,128), ('dct',32,32),
             run('metric-degrain-'+str(count),f'return neo_mv_Degrain(c,s,{group},thsad={threshold},thscd1=16320)',
                 prefix=setup,frame=1,extra=('--expect-y8-sum',str(32*32*pixel)))
 print(f'AviSynth {a.backend}: {count} cases including metric contracts passed.')
+
+# Rectangular blocks: non-square metadata, partial edges and distinct references.
+for bw, bh in [(4,8), (8,16)]:
+    w,h=4*bw+2,4*bh+2
+    for pel in (1,2,4):
+        for metric in ('sad','satd','dct'):
+            if metric=='satd' and (bw%4 or bh%4): continue
+            setup=(f'c=BlankClip(width={w},height={h},length=1,pixel_type="Y8",color_yuv=$008080) + '
+                   f'BlankClip(width={w},height={h},length=2,pixel_type="Y8",color_yuv=$048080)\n'
+                   f's=neo_mv_Super(c,blksize=[{bw},{bh}],overlap=0,pel={pel})\n'
+                   f'v=neo_mv_AnalyseMany(s,radius=1,badrange=0,metric="{metric}")\n'
+                   f'r=neo_mv_Recalculate(s,v,thsad=0,metric="{metric}")\n')
+            run('rectangle-'+str(count),'return neo_mv_Compensate(c,s,r[0],thsad=16320,thscd1=16320)',
+                frame=0,prefix=setup,extra=('--expect-y8-sum',str(w*h*4)))
+print(f'AviSynth {a.backend}: {count} cases including rectangles passed.')

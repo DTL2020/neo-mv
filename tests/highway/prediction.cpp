@@ -42,7 +42,7 @@ void run() {
         v = {{int(random() % 20001) - 10000, int(random() % 20001) - 10000}, std::int64_t(random())};
       for (const auto size : {std::pair<int, int>{4, 4},
                               {6, 6},
-                              {8, 4},
+                              {4, 8}, {8, 16}, {8, 4},
                               {12, 12},
                               {16, 2},
                               {16, 16},

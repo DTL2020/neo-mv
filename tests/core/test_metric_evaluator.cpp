@@ -19,7 +19,7 @@ template <class T, class K>
 void candidates() {
   for (int bits : {8, 10, 12, 16}) {
     if (bits > int(sizeof(T) * 8)) continue;
-    for (auto shape : {std::pair{4,4}, {6,6}, {8,4}, {8,8}, {12,12}, {16,2}, {16,8}, {16,16}, {24,24},
+    for (auto shape : {std::pair{4,4}, {6,6}, {4,8}, {8,16}, {8,4}, {8,8}, {12,12}, {16,2}, {16,8}, {16,16}, {24,24},
                        {32,16}, {32,32}, {48,48}, {64,32}, {64,64}, {128,64}, {128,128}})
       for (int pel : {1, 2, 4}) {
         MotionFixture<T> f(shape.first, shape.second, shape.first, shape.second, 4, pel, true);

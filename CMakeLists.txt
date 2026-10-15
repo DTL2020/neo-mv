@@ -234,6 +234,11 @@ if(NEO_MV_BUILD_VAPOURSYNTH OR NEO_MV_BUILD_AVISYNTH)
           "${CMAKE_CURRENT_SOURCE_DIR}/tests/vapoursynth/metric_contract.vpy" --)
         set_tests_properties(vs.metric_contract.${backend} PROPERTIES TIMEOUT 120 LABELS "spec" RUN_SERIAL TRUE
           ENVIRONMENT "NEO_MV_KERNEL=${backend}" FAIL_REGULAR_EXPRESSION "Core freed but")
+        add_test(NAME vs.rectangles.${backend} COMMAND "${NEO_MV_VSPIPE_EXECUTABLE}"
+          --arg "plugin=$<TARGET_FILE:neo_mv_vs>"
+          "${CMAKE_CURRENT_SOURCE_DIR}/tests/vapoursynth/rectangles.vpy" --)
+        set_tests_properties(vs.rectangles.${backend} PROPERTIES TIMEOUT 600 LABELS "spec" RUN_SERIAL TRUE
+          ENVIRONMENT "NEO_MV_KERNEL=${backend}" FAIL_REGULAR_EXPRESSION "Core freed but")
       endforeach()
       add_test(NAME vs.acceptance COMMAND "${NEO_MV_VSPIPE_EXECUTABLE}"
         --arg "plugin=$<TARGET_FILE:neo_mv_vs>"

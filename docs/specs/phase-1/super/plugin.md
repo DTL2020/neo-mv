@@ -19,7 +19,7 @@ Arguments appear in registration order. `clip` and `pelclip` are video nodes; `p
 | pelclip | Optional; see below | Replaces generated non-integer level-zero phases |
 | prefix | Default MVUtensils | Names the Super data on output frames |
 
-Allowed block pairs: 4x4, 8x4, 8x8, 16x2, 16x8, 16x16, 32x16, 32x32, 64x32, 64x64, 128x64, 128x128. One-element axis arrays replicate their value. If the host accepts an explicit empty axis array, use the pair fallback: blksize 8,8; overlap 0,0; pad 16,16. Omission of required arguments is still an error. More than two elements is an error.
+Allowed block pairs: 4x8, 8x16, 4x4, 6x6, 8x4, 8x8, 12x12, 16x2, 16x8, 16x16, 24x24, 32x16, 32x32, 48x48, 64x32, 64x64, 128x64, 128x128. One-element axis arrays replicate their value. If the host accepts an explicit empty axis array, use the pair fallback: blksize 8,8; overlap 0,0; pad 16,16. Omission of required arguments is still an error. More than two elements is an error.
 
 ## Frame computation
 

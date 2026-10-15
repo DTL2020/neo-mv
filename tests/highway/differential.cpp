@@ -565,12 +565,34 @@ template <class T> void additional_square_metrics() {
   }
 }
 
+template <class T>
+void rectangular_metrics() {
+  for (auto shape : {std::pair{4, 8}, {8, 16}}) {
+    const auto [w, h] = shape;
+    GuardBuffer<T> source(w, h), reference(w, h);
+    auto a = source.view(), b = reference.view();
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x) {
+        a.row(y)[x] = T((x * 29 + y * 17) % 251);
+        b.row(y)[x] = T((x * 13 + y * 31 + 7) % 251);
+      }
+    for (auto metric : {neo_mv::BlockMetric::sad, neo_mv::BlockMetric::satd}) {
+      if (metric == neo_mv::BlockMetric::satd && (w % 4 || h % 4)) continue;
+      check(neo_mv::block_metric(source.read(), reference.read(), metric) ==
+            neo_mv::simd::block_metric(source.read(), reference.read(), metric), "rectangle guarded metric");
+    }
+  }
+}
+
 int main() {
   try {
     for (auto target : hwy::SupportedAndGeneratedTargets()) {
       hwy::SetSupportedTargetsForTest(target);
       std::cout << "Testing " << hwy::TargetName(target) << std::endl;
       check(std::strcmp(neo_mv::simd::detail::target_name(), hwy::TargetName(target)) == 0, "dispatch target mismatch");
+      rectangular_metrics<std::uint8_t>();
+      rectangular_metrics<std::uint16_t>();
+      rectangular_metrics<float>();
       two_cell_satd_regression();
       byte_satd_tails();
       additional_square_metrics<std::uint8_t>();
