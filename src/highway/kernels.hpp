@@ -54,7 +54,7 @@ std::int64_t block_metric(span2d::Plane<const T> a, span2d::Plane<const T> b, Bl
   return detail::metric(a.data(), a.stride_bytes() / sizeof(T), b.data(), b.stride_bytes() / sizeof(T), a.width(),
                         a.height(), op == BlockMetric::satd);
 }
-template <class T, bool Validated = false>
+template <class T, bool Validated = false, bool Streamed = false>
 void reduce_pyramid(span2d::Plane<const T> src, int ox, int oy, span2d::Plane<T> dst, int filter,
                     span2d::Plane<T> tmp = {}) {
   if constexpr (!Validated) {
@@ -67,7 +67,7 @@ void reduce_pyramid(span2d::Plane<const T> src, int ox, int oy, span2d::Plane<T>
       throw std::invalid_argument("reduction overlaps input");
     if (filter) {
       validate_plane(tmp);
-      if (tmp.width() != 2LL * dst.width() || tmp.height() != dst.height() || active_rows_overlap(src, tmp) ||
+      if (tmp.width() != 2LL * dst.width() || tmp.height() != (Streamed ? 1 : dst.height()) || active_rows_overlap(src, tmp) ||
           active_rows_overlap(dst, tmp))
         throw std::invalid_argument("invalid reduction scratch");
     }
@@ -89,23 +89,8 @@ void reduce_pyramid(span2d::Plane<const T> src, int ox, int oy, span2d::Plane<T>
     }
     return;
   }
-  for (int y = 0; y < dst.height(); ++y) {
-    const T* taps[6]{};
-    detail::Formula op;
-    if (y == 0 || y == dst.height() - 1) {
-      op = detail::Formula::average;
-      taps[0] = src.row(oy + 2 * y).data() + ox;
-      taps[1] = src.row(oy + 2 * y + 1).data() + ox;
-    } else {
-      const int count = filter == 1 ? 4 : 6, first = filter == 1 ? -1 : -2;
-      op = filter == 1 ? detail::Formula::reduce4 : detail::Formula::reduce6;
-      for (int i = 0; i < count; ++i)
-        taps[i] = src.row(oy + 2 * y + first + i).data() + ox;
-    }
-    detail::formula(taps, 1, tmp.row(y).data(), tmp.width(), op, maximum);
-  }
-  for (int y = 0; y < dst.height(); ++y) {
-    const auto* row = tmp.row(y).data();
+  const auto horizontal = [&](int y) {
+    const auto* row = tmp.row(Streamed ? 0 : y).data();
     auto* out = dst.row(y).data();
     const int w = dst.width();
     auto scalar = [&](int x) {
@@ -123,7 +108,27 @@ void reduce_pyramid(span2d::Plane<const T> src, int ox, int oy, span2d::Plane<T>
     }
     for (int x = end; x < w; ++x)
       scalar(x);
+  };
+  for (int y = 0; y < dst.height(); ++y) {
+    const T* taps[6]{};
+    detail::Formula op;
+    if (y == 0 || y == dst.height() - 1) {
+      op = detail::Formula::average;
+      taps[0] = src.row(oy + 2 * y).data() + ox;
+      taps[1] = src.row(oy + 2 * y + 1).data() + ox;
+    } else {
+      const int count = filter == 1 ? 4 : 6, first = filter == 1 ? -1 : -2;
+      op = filter == 1 ? detail::Formula::reduce4 : detail::Formula::reduce6;
+      for (int i = 0; i < count; ++i)
+        taps[i] = src.row(oy + 2 * y + first + i).data() + ox;
+    }
+    detail::formula(taps, 1, tmp.row(Streamed ? 0 : y).data(), tmp.width(), op, maximum);
+    if constexpr (Streamed)
+      horizontal(y);
   }
+  if constexpr (!Streamed)
+    for (int y = 0; y < dst.height(); ++y)
+      horizontal(y);
 }
 namespace detail {
 template <class T>
@@ -570,6 +575,7 @@ struct HighwayKernels {
   // admits source samples once. Each producer still checks new arithmetic.
   static constexpr auto extend_border_validated = &simd::extend_border<T, true>;
   static constexpr auto reduce_pyramid_validated = &simd::reduce_pyramid<T, true>;
+  static constexpr auto reduce_pyramid_streamed_validated = &simd::reduce_pyramid<T, true, true>;
   static constexpr auto interpolate_subpixels_validated = &simd::interpolate_subpixels<T, true>;
   static constexpr auto extract_external_subpixels = &simd::extract_external_subpixels<T>;
   static BlockError block_error(const SamplingGeometry& geometry, BlockRegion block, const SamplingFrames<T>& frames,

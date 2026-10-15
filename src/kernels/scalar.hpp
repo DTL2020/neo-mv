@@ -42,6 +42,7 @@ struct ScalarKernels {
   // admits source samples once. Each producer still checks new arithmetic.
   static constexpr auto extend_border_validated = &neo_mv::extend_border<T, true>;
   static constexpr auto reduce_pyramid_validated = &neo_mv::reduce_pyramid<T, true>;
+  static constexpr auto reduce_pyramid_streamed_validated = &neo_mv::reduce_pyramid<T, true, true>;
   static constexpr auto interpolate_subpixels_validated = &neo_mv::interpolate_subpixels<T, true>;
   static constexpr auto extract_external_subpixels = &neo_mv::extract_external_subpixels<T>;
   static BlockError block_error(const SamplingGeometry& geometry, BlockRegion block, const SamplingFrames<T>& frames,

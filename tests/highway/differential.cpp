@@ -62,6 +62,16 @@ template <class T> void run() {
           neo_mv::simd::reduce_pyramid(src.read(), 0, 0, rb.view(), filter, tb.view());
           equal(ra, rb);
           equal(ta, tb);
+          Buffer<T> rc(width / 2, height / 2), rd(width / 2, height / 2),
+              tc(2 * (width / 2), 1), td(2 * (width / 2), 1), expected(2 * (width / 2), 1);
+          neo_mv::reduce_pyramid<T, true, true>(src.read(), 0, 0, rc.view(), filter, tc.view());
+          neo_mv::simd::reduce_pyramid<T, true, true>(src.read(), 0, 0, rd.view(), filter, td.view());
+          equal(ra, rc);
+          equal(ra, rd);
+          if (filter)
+            std::copy_n(ta.view().row(ta.h - 1).data(), ta.w, expected.view().row(0).data());
+          equal(expected, tc);
+          equal(expected, td);
         }
       if (width >= 2 && height >= 2)
         for (int sharp = 0; sharp < 3; ++sharp) {

@@ -148,15 +148,29 @@ void build_super_pyramid(const SuperPlan<T>& plan, const std::array<span2d::Plan
       if (l == 0)
         Kernels::extend_border_validated(source[k], phases[0], size.width, size.height, p.pad_x, p.pad_y);
       else {
-        super_detail::PlaneBuffer<T> working(size.width, size.height, overwrite);
+        auto padded = phases[0];
+        auto working = span2d::make_plane(padded.row(p.pad_y).data() + p.pad_x,
+                                          size.width, size.height, padded.stride_bytes());
         if (plan.filter() == 0) {
-          Kernels::reduce_pyramid_validated(span2d::Plane<const T>(levels[l - 1][0]), p.pad_x, p.pad_y, working.view(), 0, {});
+          Kernels::reduce_pyramid_streamed_validated(span2d::Plane<const T>(levels[l - 1][0]), p.pad_x, p.pad_y, working, 0, {});
         } else {
-          super_detail::PlaneBuffer<T> scratch(geometry_detail::dimension(2LL * size.width), size.height, overwrite);
-          Kernels::reduce_pyramid_validated(span2d::Plane<const T>(levels[l - 1][0]), p.pad_x, p.pad_y, working.view(), plan.filter(),
-                                            scratch.view());
+          super_detail::PlaneBuffer<T> scratch(geometry_detail::dimension(2LL * size.width), 1, overwrite);
+          Kernels::reduce_pyramid_streamed_validated(span2d::Plane<const T>(levels[l - 1][0]), p.pad_x, p.pad_y, working,
+                                                     plan.filter(), scratch.view());
         }
-        Kernels::extend_border_validated(working.view(), phases[0], size.width, size.height, p.pad_x, p.pad_y);
+        // Reduction already wrote the final interior. Fill only its borders;
+        // no full working-plane allocation or copy is needed.
+        for (int y = p.pad_y; y < p.pad_y + size.height; ++y) {
+          auto* row = padded.row(y).data();
+          std::fill_n(row, p.pad_x, row[p.pad_x]);
+          std::fill_n(row + p.pad_x + size.width, p.pad_x, row[p.pad_x + size.width - 1]);
+        }
+        const auto* first = padded.row(p.pad_y).data();
+        const auto* last = padded.row(p.pad_y + size.height - 1).data();
+        for (int y = 0; y < p.pad_y; ++y) {
+          std::copy_n(first, padded.width(), padded.row(y).data());
+          std::copy_n(last, padded.width(), padded.row(p.pad_y + size.height + y).data());
+        }
       }
     }
     auto& base = levels[0];

@@ -38,8 +38,9 @@ T filter_axis(Read read, int output_index, int output_size, int filter) {
 // Source is the complete padded integer plane. origin_x/y locate its working
 // origin. Output contains only the new working rectangle; extend_border follows.
 // Filters 1/2 require caller-owned scratch of exactly 2*output.width by output.height.
+// The internal streaming variant uses one scratch row and consumes it immediately.
 // Filter 0 neither requires nor touches scratch. All active writable regions are disjoint.
-template <class T, bool Validated = false>
+template <class T, bool Validated = false, bool Streamed = false>
 void reduce_pyramid(span2d::Plane<const T> source, std::int32_t origin_x, std::int32_t origin_y,
                     span2d::Plane<T> output, int filter, span2d::Plane<T> scratch = {}) {
   const auto read_width = 2LL * output.width(), read_height = 2LL * output.height();
@@ -55,7 +56,7 @@ void reduce_pyramid(span2d::Plane<const T> source, std::int32_t origin_x, std::i
       throw std::invalid_argument("reduction source and output overlap");
     if (filter != 0) {
       validate_plane(scratch);
-      if (scratch.width() != read_width || scratch.height() != output.height())
+      if (scratch.width() != read_width || scratch.height() != (Streamed ? 1 : output.height()))
         throw std::invalid_argument("incorrect reduction scratch dimensions");
       if (active_rows_overlap(source, scratch) || active_rows_overlap(output, scratch))
         throw std::invalid_argument("reduction scratch overlaps input or output");
@@ -82,14 +83,22 @@ void reduce_pyramid(span2d::Plane<const T> source, std::int32_t origin_x, std::i
             2);
     return;
   }
-  for (int y = 0; y < output.height(); ++y)
-    for (int x = 0; x < scratch.width(); ++x)
-      scratch.row(y)[x] =
-          reduction_detail::filter_axis<T>([&](int sy) { return read(x, sy); }, y, output.height(), filter);
-  for (int y = 0; y < output.height(); ++y)
+  const auto horizontal = [&](int y) {
+    const auto row = scratch.row(Streamed ? 0 : y);
     for (int x = 0; x < output.width(); ++x)
       output.row(y)[x] =
-          reduction_detail::filter_axis<T>([&](int sx) { return scratch.row(y)[sx]; }, x, output.width(), filter);
+          reduction_detail::filter_axis<T>([&](int sx) { return row[sx]; }, x, output.width(), filter);
+  };
+  for (int y = 0; y < output.height(); ++y) {
+    for (int x = 0; x < scratch.width(); ++x)
+      scratch.row(Streamed ? 0 : y)[x] =
+          reduction_detail::filter_axis<T>([&](int sy) { return read(x, sy); }, y, output.height(), filter);
+    if constexpr (Streamed)
+      horizontal(y);
+  }
+  if constexpr (!Streamed)
+    for (int y = 0; y < output.height(); ++y)
+      horizontal(y);
 }
 
 } // namespace neo_mv
