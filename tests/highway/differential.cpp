@@ -398,7 +398,7 @@ template <class T> void integer_metric_extremes() {
   // Exercise bounded SAD accumulation, both fallback dimensions, and SATD
   // reductions with full-range differences (not only random small blocks).
   for (int w : {4, 8, 12, 16, 24, 28, 32, 48, 60, 64, 124, 128, 129, 132})
-    for (int h : {4, 16, 32, 128, 129, 512}) {
+    for (int h : {4, 16, 32, 36, 128, 129, 512}) {
       Buffer<T> a(w, h), b(w, h);
       for (int pattern = 0; pattern < 3; ++pattern) {
         for (int y = 0; y < h; ++y)

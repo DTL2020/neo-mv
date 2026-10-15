@@ -614,8 +614,9 @@ HWY_INLINE auto WordSatdRow(D d, const std::uint16_t* a, const std::uint16_t* b)
 }
 
 // Keep four adjacent pixels in each cell, avoiding four-way deinterleaving.
-// For rectangles up to 32x32, even the conservative absolute coefficient
-// bound 32*32*16*65535 is below INT32_MAX, including the final reduction.
+// Each folded coefficient is at most 16*65535 per four-row group.
+// A strip up to 128x32 therefore totals at most 128*32*4*65535,
+// below INT32_MAX even after the final reduction.
 template <int FixedWidth = 0, int FixedHeight = 0, class D>
 std::int64_t SmallWordSatd(D d, const std::uint16_t* a, std::ptrdiff_t as, const std::uint16_t* b,
                            std::ptrdiff_t bs, int w, int h) {
@@ -807,6 +808,13 @@ template <class T>
 std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs, int w, int h, bool satd) {
 #if HWY_TARGET != HWY_SCALAR
   if constexpr (std::is_same_v<T, std::uint16_t>) {
+    if (satd && w <= 128 && h <= 128 && (w > 32 || h > 32)) {
+      std::int64_t total = 0;
+      for (int y = 0; y < h; y += 32)
+        total += SmallWordSatd(hn::CappedTag<std::int32_t, 16>{}, a + y * as, as, b + y * bs, bs,
+                               w, std::min(32, h - y));
+      return total;
+    }
     if (satd && w <= 32 && h <= 32) {
       if (w == 8 && h == 8)
         return SmallWordSatd<8, 8>(hn::CappedTag<std::int32_t, 8>{}, a, as, b, bs, w, h);
