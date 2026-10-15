@@ -7,7 +7,7 @@
 VapourSynth：`core.neo_mv.Analyse`；AviSynth：`neo_mv_Analyse`。参数顺序：
 
 ```text
-Analyse(super [, blksize, levels, search, searchparam, pelsearch, mvlambda, chroma, delta, lsad, plevel, globalmv, pnew, pzero, pglobal, overlap, badsad, badrange, meander, trymany, fields, tff, metric, prefix, metric_weight, metric_threshold])
+Analyse(super [, blksize, levels, search, searchparam, pelsearch, mvlambda, chroma, delta, lsad, plevel, globalmv, pnew, pzero, pglobal, overlap, badsad, badrange, meander, trymany, fields, tff, metric, prefix, metric_weight, metric_threshold, satd])
 ```
 
 此处方括号表示可选参数，不是数组字面量。可选参数建议按名称传入；Python 布尔值写作 `True`/`False`，AviSynth 写作 `true`/`false`。
@@ -42,10 +42,13 @@ Analyse(super [, blksize, levels, search, searchparam, pelsearch, mvlambda, chro
 | `prefix` | 字符串 | `"MVUtensils"` | 属性名前缀，生成和读取数据时须一致。允许空字符串，不允许 NUL。 |
 | `metric_weight` | 浮点数 | `0.5` | local 触发后变换误差所占比例，[0,1]，精度 1/65536。 |
 | `metric_threshold` | 浮点数 | `0.03125` | local 相对亮度和变化门限，[0,1]，精度 1/65536。 |
+| `satd` | 布尔 | 省略 | 兼容别名：false 选择 SAD，true 选择 SATD；与显式 metric 同时传入时必须一致。 |
 
 ### 匹配度量
 
-`metric` 接受区分大小写的字符串，默认 `"sad"`，替代旧的 `satd` 布尔参数。
+同时省略 `metric` 和 `satd` 时使用 SAD。`satd=False` 只与 `metric="sad"` 一致，`satd=True` 只与 `metric="satd"` 一致；其他组合（包括任一布尔值与 DCT/混合模式）均报错。别名追加在 `metric_threshold` 后，保留现有 metric 时代的全部参数位置。旧脚本若在原 satd 位置传入布尔值，须改为命名参数 `satd=...`；该位置仍是字符串 `metric`。显式 local 专用参数仍不能用于此别名。
+
+`metric` 接受区分大小写的字符串，默认 `"sad"`。
 
 | 值 | 亮度误差 | 格式与块尺寸 |
 | --- | --- | --- |

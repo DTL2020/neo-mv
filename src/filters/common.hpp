@@ -62,7 +62,13 @@ inline MetricConfig motion_metric(Params p) {
     if (!p.present(key)) return {};
     return unwrap(p.values.get_double(key, 0));
   };
-  return make_metric_config(unwrap(p.values.get_string("metric", "sad")),
+  auto name = unwrap(p.values.get_string("metric", "sad"));
+  if (p.present("satd")) {
+    const char* alias = p.boolean("satd", false) ? "satd" : "sad";
+    require(!p.present("metric") || name == alias, "satd conflicts with metric");
+    name = alias;
+  }
+  return make_metric_config(name,
                             optional("metric_weight"), optional("metric_threshold"));
 }
 inline ds::VideoOutputInfo output_info(const ds::VideoInputInfo& in) {

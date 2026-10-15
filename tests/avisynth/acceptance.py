@@ -237,3 +237,28 @@ for key in ("metric_weight", "metric_threshold"):
         run("mixed-invalid-"+str(count),
             f'return neo_mv_Analyse(s,metric="sad_satd_local",{key}={value})',prefix=setup,error="[0,1]")
 print(f"AviSynth {a.backend}: {count} cases including mixed metrics passed.")
+
+# Constant temporal blocks provide an independent error and consumer oracle.
+setup = temporal[:temporal.index('b=neo_mv_Analyse')]
+setup += 'b=neo_mv_Analyse(s,badrange=0)\n'
+for fn, args, select in [('Analyse','s','r'), ('AnalyseMany','s','r[0]'),
+                         ('Recalculate','s,b','r'), ('Recalculate','s,[b]','r[0]')]:
+    for value, metric, error_value in [('false','sad',1280), ('true','satd',640)]:
+        for suffix in [f',satd={value}', f',satd={value},metric="{metric}"'] + ([',metric="sad"',''] if value=='false' else []):
+            kind='clip' if select=='r' else 'array'
+            run('satd-alias-'+str(count),
+                f'r=neo_mv_{fn}({args}{suffix})\nAssert(Is{kind.title()}(r))\nx={select}\n'
+                f'x=x.ScriptClip("""Assert(propGetInt(last, "MVUtensilsAnalysisSAD", 0)=={error_value})\nlast""")\n'
+                'return neo_mv_Compensate(c,s,x,thsad=16320,thscd1=16320)',
+                frame=0, prefix=setup, extra=('--expect-y8-sum',str(32*32*30)))
+        for conflict in (('satd','dct','sad_satd_local') if value=='false' else ('sad','dct','sad_dct_local')):
+            run('satd-conflict-'+str(count),f'return neo_mv_{fn}({args},satd={value},metric="{conflict}")',
+                prefix=setup,error='satd conflicts with metric')
+    run('satd-type-'+str(count),f'return neo_mv_{fn}({args},satd="true")',prefix=setup,error='wrong type')
+for fn, args, skipped, tail, select in [('Analyse','s',21,3,'r'), ('AnalyseMany','s',21,4,'r[0]'),
+                                       ('Recalculate','s,b',12,3,'r')]:
+    for params in ([*(['Undefined()']*skipped),'"satd"'], [*(['Undefined()']*(skipped+1+tail)),'true']):
+        run('satd-positional-'+str(count), f'r=neo_mv_{fn}({args},'+','.join(params)+f')\nx={select}\n'
+            'return x.ScriptClip("""Assert(propGetInt(last, "MVUtensilsAnalysisSAD", 0)==640)\nlast""")',
+            prefix=setup,frame=0)
+print(f'AviSynth {a.backend}: {count} cases including satd aliases passed.')

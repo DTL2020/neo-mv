@@ -377,3 +377,51 @@ for create in [lambda **kw: mv.Analyse(s,**kw),lambda **kw: mv.AnalyseMany(s,**k
         nodes=outputs(create(metric="sad_satd_local",metric_weight=weight,metric_threshold=threshold))
         for node in nodes:
             assert all(e==expected for e in values(node.get_frame(2).props[P+"AnalysisSAD"]))
+
+# Type conversion may fail in Python before the plugin receives the call.
+def fails_argument(call):
+    try:
+        call()
+    except (vs.Error, TypeError, ValueError):
+        return
+    raise AssertionError('expected invalid argument type')
+
+# Compatibility aliases retain omission and every metric-era positional slot.
+for create in [lambda **kw: mv.Analyse(s, **kw), lambda **kw: mv.AnalyseMany(s, **kw),
+               lambda **kw: mv.Recalculate(s, many, **kw)]:
+    for alias, name in [(False, 'sad'), (True, 'satd')]:
+        expected = outputs(create(metric=name))
+        for kwargs in [dict(satd=alias), dict(satd=alias, metric=name)] + ([{}] if not alias else []):
+            actual = outputs(create(**kwargs))
+            assert len(actual) == len(expected)
+            for x, y in zip(actual, expected):
+                for n in (1, 2):
+                    xf, yf = x.get_frame(n), y.get_frame(n)
+                    assert set(xf.props) == set(yf.props)
+                    for key in xf.props:
+                        if key == P + 'NeoMVSuperPlanesV1':
+                            assert [pixels(f) for f in xf.props[key]] == [pixels(f) for f in yf.props[key]]
+                        else:
+                            assert xf.props[key] == yf.props[key], key
+                    assert pixels(xf) == pixels(yf)
+                assert pixels(mv.Compensate(c, s, x).get_frame(2)) == pixels(mv.Compensate(c, s, y).get_frame(2))
+        for conflict in (('satd', 'dct', 'sad_satd_local') if not alias else ('sad', 'dct', 'sad_dct_local')):
+            fails(lambda: create(satd=alias, metric=conflict), 'satd conflicts with metric')
+        fails(lambda: create(satd=alias, metric_weight=0.5), 'local metric')
+    fails_argument(lambda: create(satd='true'))
+# Recalculate must still map clip, singleton array, and multiple members one to one.
+for vectors in (many[0], [many[0]], many):
+    r = mv.Recalculate(s, vectors, satd=True)
+    assert len(outputs(r)) == len(outputs(vectors))
+    for node in outputs(r): node.get_frame(2)
+for call, named, skipped in [
+    (lambda *a: mv.Analyse(s, *a), lambda **kw: mv.Analyse(s, **kw), 21),
+    (lambda *a: mv.AnalyseMany(s, *a), lambda **kw: mv.AnalyseMany(s, **kw), 21),
+    (lambda *a: mv.Recalculate(s, many, *a), lambda **kw: mv.Recalculate(s, many, **kw), 12),
+]:
+    tail = 4 if skipped == 21 and len(outputs(named())) > 1 else 3
+    for positional, expected in [(call(*([None]*skipped), 'satd'), named(metric='satd')),
+                                 (call(*([None]*(skipped+1+tail)), True), named(satd=True))]:
+        assert [analysis(n.get_frame(2)) for n in outputs(positional)] == [analysis(n.get_frame(2)) for n in outputs(expected)]
+    fails_argument(lambda: call(*([None]*skipped), True))
+print('satd aliases: named, positional, conflicts, bundle shapes and consumers passed')

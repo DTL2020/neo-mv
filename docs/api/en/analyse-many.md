@@ -7,7 +7,7 @@ Create an ordered array of forward/backward analysis clips.
 VapourSynth: `core.neo_mv.AnalyseMany`. AviSynth: `neo_mv_AnalyseMany`. Parameter order:
 
 ```text
-AnalyseMany(super [, blksize, levels, search, searchparam, pelsearch, mvlambda, chroma, delta, lsad, plevel, globalmv, pnew, pzero, pglobal, overlap, badsad, badrange, meander, trymany, fields, tff, metric, radius, prefix, metric_weight, metric_threshold])
+AnalyseMany(super [, blksize, levels, search, searchparam, pelsearch, mvlambda, chroma, delta, lsad, plevel, globalmv, pnew, pzero, pglobal, overlap, badsad, badrange, meander, trymany, fields, tff, metric, radius, prefix, metric_weight, metric_threshold, satd])
 ```
 
 Brackets here mark optional arguments, not a literal array. Use named optional arguments. Booleans are `True`/`False` in Python and `true`/`false` in AviSynth.
@@ -43,12 +43,15 @@ Brackets here mark optional arguments, not a literal array. Use named optional a
 | `prefix` | String | `"MVUtensils"` | Property-name prefix. Match all producers and consumers. Empty is allowed; NUL is not. |
 | `metric_weight` | Float | `0.5` | Transform contribution after a local trigger; [0,1], precision 1/65536. |
 | `metric_threshold` | Float | `0.03125` | Local relative luma-sum change threshold; [0,1], precision 1/65536. |
+| `satd` | Boolean | Omitted | Compatibility alias: false selects SAD; true selects SATD. Must agree with an explicit metric. |
 
 ### Matching metric
 
+Omitting both `metric` and `satd` selects SAD. `satd=False` agrees only with `metric="sad"`; `satd=True` agrees only with `metric="satd"`. Other combinations, including DCT or mixed metrics with either Boolean, fail. The alias is appended after `metric_threshold`, preserving every existing metric-era position. Old scripts passing a Boolean in the former satd slot must change that argument to named `satd=...`; that slot remains the string `metric`. Explicit local-only controls remain invalid for this alias.
+
 New mixed modes, local parameters, and migration mapping follow [Analyse](analyse.md#mixed-modes). Each member and frame-pair request has separate statistics and workspace.
 
-Values and restrictions match [Analyse](analyse.md#matching-metric): `"sad"` is the default; `"satd"` excludes 6×6 and 16×2; `"dct"` supports all valid block sizes but accepts only 8–16-bit integer samples, rejecting float32. Chroma always uses SAD. This string parameter replaces the former `satd` Boolean parameter.
+Values and restrictions match [Analyse](analyse.md#matching-metric): `"sad"` is the default; `"satd"` excludes 6×6 and 16×2; `"dct"` supports all valid block sizes but accepts only 8–16-bit integer samples, rejecting float32. Chroma always uses SAD. The former `satd` Boolean is also available as a compatibility alias.
 
 The selected metric applies to every array member; `AnalysisSAD` and error thresholds have the same meaning as in Analyse.
 

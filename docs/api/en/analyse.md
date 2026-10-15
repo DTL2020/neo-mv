@@ -7,7 +7,7 @@ Estimate block motion from each frame to a reference at n+delta.
 VapourSynth: `core.neo_mv.Analyse`. AviSynth: `neo_mv_Analyse`. Parameter order:
 
 ```text
-Analyse(super [, blksize, levels, search, searchparam, pelsearch, mvlambda, chroma, delta, lsad, plevel, globalmv, pnew, pzero, pglobal, overlap, badsad, badrange, meander, trymany, fields, tff, metric, prefix, metric_weight, metric_threshold])
+Analyse(super [, blksize, levels, search, searchparam, pelsearch, mvlambda, chroma, delta, lsad, plevel, globalmv, pnew, pzero, pglobal, overlap, badsad, badrange, meander, trymany, fields, tff, metric, prefix, metric_weight, metric_threshold, satd])
 ```
 
 Brackets here mark optional arguments, not a literal array. Use named optional arguments. Booleans are `True`/`False` in Python and `true`/`false` in AviSynth.
@@ -42,10 +42,13 @@ Brackets here mark optional arguments, not a literal array. Use named optional a
 | `prefix` | String | `"MVUtensils"` | Property-name prefix. Match all producers and consumers. Empty is allowed; NUL is not. |
 | `metric_weight` | Float | `0.5` | Transform contribution after a local trigger; [0,1], precision 1/65536. |
 | `metric_threshold` | Float | `0.03125` | Local relative luma-sum change threshold; [0,1], precision 1/65536. |
+| `satd` | Boolean | Omitted | Compatibility alias: false selects SAD; true selects SATD. Must agree with an explicit metric. |
 
 ### Matching metric
 
-`metric` accepts case-sensitive strings and defaults to `"sad"`, replacing the former `satd` Boolean parameter.
+Omitting both `metric` and `satd` selects SAD. `satd=False` agrees only with `metric="sad"`; `satd=True` agrees only with `metric="satd"`. Other combinations, including DCT or mixed metrics with either Boolean, fail. The alias is appended after `metric_threshold`, preserving every existing metric-era position. Old scripts passing a Boolean in the former satd slot must change that argument to named `satd=...`; that slot remains the string `metric`. Explicit local-only controls remain invalid for this alias.
+
+`metric` accepts case-sensitive strings and defaults to `"sad"`.
 
 | Value | Luma error | Formats and block sizes |
 | --- | --- | --- |
