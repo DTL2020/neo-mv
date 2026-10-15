@@ -1289,13 +1289,36 @@ HWY_INLINE MetricRequest<T> MotionPlane(const MotionMetricRequest<T>& block,
   return r;
 }
 
+template <int Pel, class T>
+HWY_INLINE MetricRequest<T> MotionPlaneAt(const MotionMetricRequest<T>& block,
+                                          const MetricReferenceFrames<T>& frames, int k,
+                                          std::int64_t vx, std::int64_t vy) {
+  static_assert(Pel == 1 || Pel == 2 || Pel == 4);
+  // Every candidate footprint has already been admitted. Absolute subpixel
+  // coordinates are nonnegative even for negative vectors, so unsigned
+  // quotient/remainder avoid a signed floor correction for each candidate.
+  const auto x = std::uint64_t(std::int64_t(block.x[k]) * Pel + vx);
+  const auto y = std::uint64_t(std::int64_t(block.y[k]) * Pel + vy);
+  const auto phase = std::size_t((y % Pel) * Pel + x % Pel);
+  auto r = block.planes[k];
+  r.reference_stride = frames.strides[k][phase];
+  const auto offset = std::ptrdiff_t(y / Pel) * r.reference_stride + std::ptrdiff_t(x / Pel);
+  r.reference = frames.references[k][phase] + offset;
+  return r;
+}
+
 template <class T, int LumaWidth, bool Bounded = true, int Pel = 0, bool Satd = false, bool PackedSource = false>
 HWY_INLINE bool MotionMetric420Bounded(const MotionMetricRequest<T>& block, const MetricReferenceFrames<T>& frames,
                             int vx, int vy, std::int64_t limit, std::int64_t* errors) {
   const int pel = Pel == 0 ? block.pel : Pel;
-  const auto qx = MotionQuotient(vx, pel), qy = MotionQuotient(vy, pel);
-  const auto phase = std::size_t((vy - pel * qy) * pel + vx - pel * qx);
-  const auto y = MotionPlane(block, frames, 0, qx, qy, phase);
+  MetricRequest<T> y;
+  if constexpr (Pel != 0)
+    y = MotionPlaneAt<Pel>(block, frames, 0, vx, vy);
+  else {
+    const auto qx = MotionQuotient(vx, pel), qy = MotionQuotient(vy, pel);
+    const auto phase = std::size_t((vy - pel * qy) * pel + vx - pel * qx);
+    y = MotionPlane(block, frames, 0, qx, qy, phase);
+  }
 #if HWY_TARGET != HWY_SCALAR
   if constexpr (PackedSource) {
     static_assert(std::is_same_v<T, std::uint8_t> && (LumaWidth == 8 || LumaWidth == 16) && !Satd);
@@ -1334,7 +1357,11 @@ HWY_INLINE bool MotionMetric420Bounded(const MotionMetricRequest<T>& block, cons
   const auto cx = MotionQuotient(tx, pel), cy = MotionQuotient(ty, pel);
   const auto chroma_phase = std::size_t((ty - pel * cy) * pel + tx - pel * cx);
   for (int k = 1; k < 3; ++k) {
-    auto r = MotionPlane(block, frames, k, cx, cy, chroma_phase);
+    MetricRequest<T> r;
+    if constexpr (Pel != 0)
+      r = MotionPlaneAt<Pel>(block, frames, k, tx, ty);
+    else
+      r = MotionPlane(block, frames, k, cx, cy, chroma_phase);
     if constexpr (PackedSource)
       r.source_stride = LumaWidth / 2;
 #if HWY_TARGET != HWY_SCALAR
@@ -1369,9 +1396,7 @@ struct AnalyseInteger {
   template <bool Bounded>
   HWY_INLINE bool metric(MotionVector vector, std::int64_t limit, std::int64_t* errors) const {
     if constexpr (GrayWidth != 0) {
-      const auto qx = MotionQuotient(vector.x, Pel), qy = MotionQuotient(vector.y, Pel);
-      const auto phase = std::size_t((vector.y - Pel * qy) * Pel + vector.x - Pel * qx);
-      const auto r = MotionPlane(block, frames, 0, qx, qy, phase);
+      const auto r = MotionPlaneAt<Pel>(block, frames, 0, vector.x, vector.y);
       // For 8x8, one final reduction is cheaper than checking a four-row prefix.
       // Gray 16x16 first checks at 12 rows; 420 keeps its earlier checks.
       errors[0] = Sad420Plane<T, GrayWidth, (Bounded && GrayWidth != 8), true>(r, limit);
