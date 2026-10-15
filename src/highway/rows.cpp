@@ -879,6 +879,12 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
           return SmallByteSad(hn::CappedTag<T, 8>{}, a, as, b, bs, w, h);
       }
       if constexpr (std::is_same_v<T, std::uint16_t>) {
+        if (w == 32 && h == 32 && 32 % hn::Lanes(hn::CappedTag<std::uint16_t, 32>{}) == 0)
+          return FixedShortSad<32, 32>(a, as, b, bs);
+        if (w == 64 && h == 64 && 64 % hn::Lanes(hn::CappedTag<std::uint16_t, 64>{}) == 0)
+          return FixedShortSad<64, 64>(a, as, b, bs);
+        if (w == 128 && h == 128 && 128 % hn::Lanes(hn::CappedTag<std::uint16_t, 128>{}) == 0)
+          return FixedShortSad<128, 128>(a, as, b, bs);
         if (w == 16 && h == 16 && 16 % hn::Lanes(hn::CappedTag<std::uint16_t, 16>{}) == 0)
           return FixedShortSad<16, 16>(a, as, b, bs);
         if (w == 8 && h == 8 && 8 % hn::Lanes(hn::CappedTag<std::uint16_t, 8>{}) == 0)
