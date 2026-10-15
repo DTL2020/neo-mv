@@ -20,7 +20,7 @@ else()
 endif()
 FetchContent_Declare(dualsynth2
   GIT_REPOSITORY https://github.com/HomeOfAviSynthPlusEvolution/dualsynth2.git
-  GIT_TAG ad67c8be4d39df3c3daacccf794abe0a3552d7df
+  GIT_TAG 1.0
   SOURCE_SUBDIR "${_neo_mv_ds2_subdir}"
 )
 FetchContent_MakeAvailable(dualsynth2)

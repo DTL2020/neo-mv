@@ -268,7 +268,7 @@ struct Filter {
   static constexpr int input_count = ds::dynamic_video_inputs;
   static constexpr ds::HostRequirements host_requirements{true, 0, 0};
   static constexpr ds::OutputOrigin output_origin = ds::OutputOrigin::copy_from_input(0);
-  static constexpr bool writes_output_pixels = false;
+  static constexpr bool needs_output_pixel_access = false;
   struct State {
     std::shared_ptr<const Runtime> runtime;
   };
