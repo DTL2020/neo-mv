@@ -768,6 +768,10 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
           return PackedByteSatd8(packed, a, as, b, bs);
         return ByteSatd<8, 8>(hn::CappedTag<std::int16_t, 8>{}, a, as, b, bs, w, h);
       }
+      if (w == 16 && h == 16)
+        return ByteSatd<16, 16>(hn::CappedTag<std::int16_t, 16>{}, a, as, b, bs, w, h);
+      if (w == 32 && h == 32)
+        return ByteSatd<32, 32>(hn::CappedTag<std::int16_t, 32>{}, a, as, b, bs, w, h);
       if (w < 8)
         return ByteSatd(hn::CappedTag<std::int16_t, 4>{}, a, as, b, bs, w, h);
       if (w < 16)
