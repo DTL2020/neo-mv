@@ -820,18 +820,11 @@ std::int64_t MetricWithTag(D d, const T *a, std::ptrdiff_t as, const T *b, std::
   else
     return total;
 }
-template <class T>
-std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs, int w, int h, bool satd) {
+template <class T, bool satd>
+HWY_NOINLINE std::int64_t MetricKnown(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs, int w, int h) {
 #if HWY_TARGET != HWY_SCALAR
   if constexpr (std::is_same_v<T, std::uint16_t>) {
-    if (satd && w <= 128 && h <= 128 && (w > 32 || h > 32)) {
-      std::int64_t total = 0;
-      for (int y = 0; y < h; y += 32)
-        total += SmallWordSatd(hn::CappedTag<std::int32_t, 16>{}, a + y * as, as, b + y * bs, bs,
-                               w, std::min(32, h - y));
-      return total;
-    }
-    if (satd && w <= 32 && h <= 32) {
+    if (satd && w <= 128 && h <= 128) {
       if (w == 8 && h == 8) {
         const hn::CappedTag<std::int32_t, 16> packed;
         if (hn::Lanes(packed) == 16)
@@ -842,6 +835,13 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
         return SmallWordSatd<16, 16>(hn::CappedTag<std::int32_t, 16>{}, a, as, b, bs, w, h);
       if (w == 32 && h == 32)
         return SmallWordSatd<32, 32>(hn::CappedTag<std::int32_t, 16>{}, a, as, b, bs, w, h);
+      if (w > 32 || h > 32) {
+        std::int64_t total = 0;
+        for (int y = 0; y < h; y += 32)
+          total += SmallWordSatd(hn::CappedTag<std::int32_t, 16>{}, a + y * as, as, b + y * bs, bs,
+                                 w, std::min(32, h - y));
+        return total;
+      }
       if (w < 8)
         return SmallWordSatd(hn::CappedTag<std::int32_t, 4>{}, a, as, b, bs, w, h);
       if (w < 16)
@@ -903,16 +903,16 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
           return SmallByteSad(hn::CappedTag<T, 8>{}, a, as, b, bs, w, h);
       }
       if constexpr (std::is_same_v<T, std::uint16_t>) {
+        if (w == 16 && h == 16 && 16 % hn::Lanes(hn::CappedTag<std::uint16_t, 16>{}) == 0)
+          return FixedShortSad<16, 16>(a, as, b, bs);
+        if (w == 8 && h == 8 && 8 % hn::Lanes(hn::CappedTag<std::uint16_t, 8>{}) == 0)
+          return FixedShortSad<8, 8>(a, as, b, bs);
         if (w == 32 && h == 32 && 32 % hn::Lanes(hn::CappedTag<std::uint16_t, 32>{}) == 0)
           return FixedShortSad<32, 32>(a, as, b, bs);
         if (w == 64 && h == 64 && 64 % hn::Lanes(hn::CappedTag<std::uint16_t, 64>{}) == 0)
           return FixedShortSad<64, 64>(a, as, b, bs);
         if (w == 128 && h == 128 && 128 % hn::Lanes(hn::CappedTag<std::uint16_t, 128>{}) == 0)
           return FixedShortSad<128, 128>(a, as, b, bs);
-        if (w == 16 && h == 16 && 16 % hn::Lanes(hn::CappedTag<std::uint16_t, 16>{}) == 0)
-          return FixedShortSad<16, 16>(a, as, b, bs);
-        if (w == 8 && h == 8 && 8 % hn::Lanes(hn::CappedTag<std::uint16_t, 8>{}) == 0)
-          return FixedShortSad<8, 8>(a, as, b, bs);
       }
 #endif
       if (w < 8)
@@ -942,6 +942,12 @@ std::int64_t Metric(const T *a, std::ptrdiff_t as, const T *b, std::ptrdiff_t bs
       return MetricWithTag(hn::CappedTag<Wide<T>, 8>{}, a, as, b, bs, w, h, satd);
   }
   return MetricWithTag(hn::ScalableTag<Wide<T>>{}, a, as, b, bs, w, h, satd);
+}
+
+template <class T>
+std::int64_t Metric(const T* a, std::ptrdiff_t as, const T* b, std::ptrdiff_t bs, int w, int h, bool satd) {
+  // Keep SAD's register and stack requirements independent of the SATD kernels.
+  return satd ? MetricKnown<T, true>(a, as, b, bs, w, h) : MetricKnown<T, false>(a, as, b, bs, w, h);
 }
 // Selected only for three 4:2:0 SAD planes with 16x16 Y and 8x8 U/V.
 template <class T>
