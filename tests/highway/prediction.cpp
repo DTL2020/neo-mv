@@ -6,7 +6,7 @@
 
 using namespace neo_mv;
 namespace {
-void compare(const MotionGrid& parent, PredictionGeometry g, int width, int height) {
+void compare(const MotionGrid& parent, PredictionGeometry g, int width, int height, bool must_succeed = false) {
   MotionGrid a{width, height, std::vector<MotionTriple>(std::size_t(width) * height)}, b = a;
   int scalar_error = 0, simd_error = 0;
   const auto invoke = [&](bool simd) {
@@ -26,74 +26,59 @@ void compare(const MotionGrid& parent, PredictionGeometry g, int width, int heig
   simd_error = invoke(true);
   if (scalar_error != simd_error)
     throw std::runtime_error("exception mismatch");
-  if (scalar_error)
+  if (scalar_error) {
+    if (must_succeed)
+      throw std::runtime_error("valid interpolation case rejected");
     return;
+  }
   for (std::size_t i = 0; i < a.values.size(); ++i)
     if (a.values[i].vector.x != b.values[i].vector.x || a.values[i].vector.y != b.values[i].vector.y ||
         a.values[i].error != b.values[i].error)
       throw std::runtime_error("interpolation mismatch at " + std::to_string(i));
 }
-void run() {
+MotionGrid random_grid(int width, int height, std::mt19937& random) {
+  MotionGrid grid{width, height, std::vector<MotionTriple>(std::size_t(width) * height)};
+  for (auto& v : grid.values)
+    v = {{int(random() % 20001) - 10000, int(random() % 20001) - 10000}, std::int64_t(random())};
+  return grid;
+}
+void geometry_cases() {
   std::mt19937 random(9346);
+  // Every supported block shape keeps all overlap and pel combinations.
+  // One grid covers both interior parities, clamped edges, full SIMD groups
+  // and a tail; crossing these cases with every grid size adds redundant work.
+  const auto parent = random_grid(18, 3, random);
+  constexpr std::pair<int, int> sizes[] = {
+      {4, 4},   {4, 6},   {4, 8},   {4, 16},  {6, 4},   {6, 6},   {6, 8},   {6, 12},  {6, 24},   {8, 4},
+      {8, 6},   {8, 8},   {8, 12},  {8, 16},  {8, 32},  {12, 6},  {12, 8},  {12, 12}, {12, 16},  {12, 24},
+      {12, 48}, {16, 2},  {16, 4},  {16, 8},  {16, 12}, {16, 16}, {16, 24}, {16, 32}, {16, 64},  {24, 6},
+      {24, 12}, {24, 16}, {24, 24}, {24, 32}, {24, 48}, {32, 8},  {32, 16}, {32, 24}, {32, 32},  {32, 64},
+      {48, 12}, {48, 24}, {48, 48}, {48, 64}, {64, 16}, {64, 32}, {64, 48}, {64, 64}, {128, 64}, {128, 128}};
+  for (const auto size : sizes)
+    for (int ox : {0, 1, size.first / 2})
+      for (int oy : {0, 1, size.second / 2})
+        for (int pp : {1, 2, 4})
+          for (int cp : {1, 2, 4})
+            compare(parent, {size.first, size.second, ox, oy, pp, cp}, 37, 7, true);
+}
+void grid_boundary_cases() {
+  std::mt19937 random(9347);
+  // Sweep the lane boundaries independently of the block-shape matrix.
+  // These geometries cover no overlap, either axis alone, half/asymmetric
+  // overlap, square/wide/tall blocks and every coordinate shift (1 through 5).
+  constexpr PredictionGeometry geometries[] = {{8, 8, 0, 0, 1, 1},       {8, 8, 1, 0, 1, 4},  {8, 8, 0, 1, 4, 1},
+                                               {8, 8, 4, 4, 2, 1},       {6, 12, 1, 6, 1, 2}, {12, 6, 6, 1, 2, 4},
+                                               {128, 128, 64, 64, 4, 4}, {16, 2, 8, 1, 4, 2}};
   for (int width : {1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33})
     for (int height : {1, 2, 5}) {
-      MotionGrid parent{width, height, std::vector<MotionTriple>(std::size_t(width) * height)};
-      for (auto& v : parent.values)
-        v = {{int(random() % 20001) - 10000, int(random() % 20001) - 10000}, std::int64_t(random())};
-      for (const auto size : {std::pair<int, int>{4, 4},
-                              {6, 6},
-                              {6, 12},
-                              {6, 24},
-                              {8, 32},
-                              {12, 6},
-                              {12, 16},
-                              {12, 24},
-                              {12, 48},
-                              {16, 12},
-                              {16, 24},
-                              {16, 32},
-                              {16, 64},
-                              {24, 6},
-                              {24, 12},
-                              {24, 16},
-                              {24, 32},
-                              {24, 48},
-                              {32, 8},
-                              {32, 24},
-                              {32, 64},
-                              {48, 12},
-                              {48, 24},
-                              {48, 64},
-                              {64, 16},
-                              {64, 48},
-                              {4, 6},
-                              {6, 4},
-                              {4, 16},
-                              {16, 4},
-                              {6, 8},
-                              {8, 6},
-                              {8, 12},
-                              {12, 8},
-                              {4, 8},
-                              {8, 16},
-                              {8, 4},
-                              {12, 12},
-                              {16, 2},
-                              {16, 16},
-                              {24, 24},
-                              {32, 16},
-                              {48, 48},
-                              {64, 64},
-                              {128, 128}})
-        for (int ox : {0, 1, size.first / 2})
-          for (int oy : {0, 1, size.second / 2})
-            for (int pp : {1, 2, 4})
-              for (int cp : {1, 2, 4}) {
-                PredictionGeometry g{size.first, size.second, ox, oy, pp, cp};
-                for (int dx : {-1, 0, 3})
-                  compare(parent, g, 2 * width + dx, 2 * height + 1);
-              }
+      const auto parent = random_grid(width, height, random);
+      for (const auto g : geometries)
+        for (int dx : {-1, 0, 3})
+          compare(parent, g, 2 * width + dx, 2 * height + 1, true);
     }
+}
+void arithmetic_boundary_cases() {
+  std::mt19937 random(9348);
   // Overlap blksize/8 gives divisors 49, 196, 784, 3136 and 12544, whose
   // binary64 reciprocals satisfy n*fl(1/n) < 1. Uniform motion must divide
   // exactly on both paths: a reciprocal product would give 2v-1, not 2v.
@@ -195,7 +180,9 @@ int main() {
     for (auto target : hwy::SupportedAndGeneratedTargets()) {
       hwy::SetSupportedTargetsForTest(target);
       std::cout << hwy::TargetName(target) << std::endl;
-      run();
+      geometry_cases();
+      grid_boundary_cases();
+      arithmetic_boundary_cases();
     }
     hwy::SetSupportedTargetsForTest(0);
   } catch (const std::exception& e) {
