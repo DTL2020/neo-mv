@@ -16,14 +16,15 @@ import sys
 import tempfile
 
 from catalog import BY_ID, CASES
+from case_groups import GROUP_OPERATIONS, LEGACY_PHASE_GROUPS, group_for
 from protocol import (SCHEMA, DEPAN_FLOAT_ABSOLUTE_TOLERANCE, DEPAN_FLOAT_RELATIVE_TOLERANCE,
                       compare, digest_file, validate_result)
 
 
 def validate_depan_tolerance_selection(enabled, kernel, selected):
     if enabled and (kernel != "highway" or not selected or any(
-            spec.get("phase") != 5 or spec.get("operation") != "DepanAnalyse" for spec in selected)):
-        raise ValueError("--depan-float-tolerance requires --neo-kernel highway and only Phase5 DepanAnalyse cases")
+            group_for(spec) != "depan" or spec.get("operation") != "DepanAnalyse" for spec in selected)):
+        raise ValueError("--depan-float-tolerance requires --neo-kernel highway and only DepanAnalyse cases")
 
 
 def git_state(root):
@@ -107,11 +108,12 @@ def main():
                         help="explicit reference binary; disables reference autoload and verifies its path and hash")
     parser.add_argument("--case", action="append", choices=BY_ID, dest="cases", help="repeat to select cases")
     parser.add_argument("--list", action="store_true", help="list cases without importing VS")
-    phase = parser.add_mutually_exclusive_group()
-    phase.add_argument("--phase", type=int, choices=[1, 2, 3, 4, 5, 6, 7], help="select one development phase")
-    phase.add_argument("--phase4", action="store_const", const=4, dest="phase", help="select phase four")
-    phase.add_argument("--phase5", action="store_const", const=5, dest="phase", help="select phase five")
-    phase.add_argument("--phase6", action="store_const", const=6, dest="phase", help="select phase six")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--group", choices=GROUP_OPERATIONS, help="select one functional group")
+    selection.add_argument("--phase", type=int, choices=[1, 2, 3, 4, 5, 6, 7], help="legacy phase selection; prefer --group")
+    selection.add_argument("--phase4", action="store_const", const=4, dest="phase", help="alias for --group interpolation")
+    selection.add_argument("--phase5", action="store_const", const=5, dest="phase", help="alias for --group depan")
+    selection.add_argument("--phase6", action="store_const", const=6, dest="phase", help="alias for --group estimate")
     parser.add_argument("--threads", type=int, choices=[1, 4], default=1)
     parser.add_argument("--timeout", type=float, default=30, help="per backend/case timeout in seconds")
     parser.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parents[2] / "build" / "blackbox")
@@ -125,8 +127,9 @@ def main():
     if args.cases and len(args.cases) != len(set(args.cases)):
         parser.error("duplicate case selection")
     selected = [BY_ID[key] for key in args.cases] if args.cases else CASES
-    if args.phase is not None:
-        selected = [spec for spec in selected if spec.get("phase", 1) == args.phase]
+    groups = (args.group,) if args.group else LEGACY_PHASE_GROUPS.get(args.phase)
+    if groups is not None:
+        selected = [spec for spec in selected if group_for(spec) in groups]
     if not selected:
         parser.error("no cases selected")
     try:

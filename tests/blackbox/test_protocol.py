@@ -5,11 +5,13 @@ import hashlib
 from pathlib import Path
 import tempfile
 import struct
+import subprocess
+import sys
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from cases import CASES
+from motion_cases import CASES
 from protocol import SCHEMA, compare, digest_json, observation_keys, output_observation_keys, validate_result
 from worker import configure_kernel, explicit_plugin_environment, property_value, snapshot, verify_explicit_plugin
 from render_cases import CASES as RENDER_CASES
@@ -20,9 +22,60 @@ from depan_cases import CASES as DEPAN_CASES
 from estimate_cases import CASES as ESTIMATE_CASES, OBSERVATION_KEYS as ESTIMATE_KEYS
 from stabilise_cases import CASES as STABILISE_CASES
 from run import validate_depan_tolerance_selection
+from case_groups import group_for
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_functional_group_cli_preserves_fixture_and_legacy_selections(self):
+        from catalog import CASES as ALL_CASES
+
+        def listed(*arguments):
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name("run.py")),
+                                     "--list", *arguments], capture_output=True, text=True, check=True)
+            return result.stdout.splitlines()
+
+        fixtures = dict(motion=CASES, render=RENDER_CASES, mask=MASK_CASES, flow=FLOW_CASES,
+                        interpolation=INTERPOLATION_CASES, depan=DEPAN_CASES,
+                        estimate=ESTIMATE_CASES, stabilise=STABILISE_CASES)
+        for group, cases in fixtures.items():
+            with self.subTest(group=group):
+                self.assertEqual(listed("--group", group), [spec["id"] for spec in cases])
+        # The original fixture metadata is the independent compatibility oracle.
+        for phase in range(1, 8):
+            expected = [spec["id"] for spec in ALL_CASES if spec.get("phase", 1) == phase]
+            self.assertEqual(listed("--phase", str(phase)), expected)
+            if phase in (4, 5, 6):
+                self.assertEqual(listed(f"--phase{phase}"), expected)
+        self.assertEqual(listed("--group", "flow", "--case", MASK_CASES[0]["id"],
+                                "--case", FLOW_CASES[0]["id"]), [FLOW_CASES[0]["id"]])
+
+    def test_functional_group_cli_rejects_conflicts_empty_and_duplicate_selections(self):
+        for arguments in (("--group", "flow", "--phase", "3"),
+                          ("--group", "depan", "--phase5"),
+                          ("--group", "flow", "--case", MASK_CASES[0]["id"]),
+                          ("--group", "flow", "--case", FLOW_CASES[0]["id"],
+                           "--case", FLOW_CASES[0]["id"])):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run([sys.executable, str(Path(__file__).with_name("run.py")),
+                                         "--list", *arguments], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+
+    def test_legacy_phase_metadata_does_not_select_observation_or_tolerance_policy(self):
+        from catalog import CASES as ALL_CASES
+        for spec in ALL_CASES:
+            changed = dict(spec, phase=99)
+            self.assertEqual(group_for(changed), group_for(spec))
+            self.assertEqual(observation_keys(changed), observation_keys(spec))
+            self.assertEqual(output_observation_keys(changed), output_observation_keys(spec))
+        with self.assertRaises(ValueError):
+            group_for(dict(operation="unknown"))
+        spec, reference, candidate = self.depan_highway_pair()
+        candidate["records"][0]["properties"]["Depan_dx"]["values"] = ["3fe0000000000001"]
+        changed = dict(spec, phase=99)
+        validate_depan_tolerance_selection(True, "highway", [changed])
+        self.assertEqual(compare(reference, candidate, changed, depan_float_tolerance=True)[0],
+                         "within_tolerance")
+
     def test_stabilise_transport_requires_carrier_and_strict_outputs(self):
         spec = copy.deepcopy(STABILISE_CASES[0])
         spec.update(length=5, requests=[[0, 4], [0, 0], [0, 2]])
@@ -734,14 +787,14 @@ class ProtocolTests(unittest.TestCase):
                     self.assertGreater(rejected["absolute_difference"], rejected["limit"])
 
     def test_depan_tolerance_cannot_cover_other_operations_backends_or_targets(self):
-        for change in ("compensate", "phase", "reference_backend", "candidate_backend", "scalar", "EMU128", "missing"):
+        for change in ("compensate", "estimate", "reference_backend", "candidate_backend", "scalar", "EMU128", "missing"):
             spec, reference, candidate = self.depan_highway_pair()
             spec = copy.deepcopy(spec)
             candidate["records"][0]["properties"]["Depan_dx"]["values"] = ["3fe0000000000001"]
             if change == "compensate":
                 spec["operation"] = "DepanCompensate"
-            elif change == "phase":
-                spec["phase"] = 4
+            elif change == "estimate":
+                spec["operation"] = "DepanEstimate"
             elif change == "reference_backend":
                 reference["backend"] = "neo"
             elif change == "candidate_backend":

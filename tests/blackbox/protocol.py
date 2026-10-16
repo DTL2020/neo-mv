@@ -4,7 +4,9 @@ import json
 import math
 import struct
 
-from cases import ANALYSIS_KEYS, SUPER_KEYS
+from case_groups import (AUXILIARY_GROUPS, DEPAN_GROUPS, EXTENDED_OBSERVATION_GROUPS,
+                         PREPARED_GROUPS, group_for)
+from motion_cases import ANALYSIS_KEYS, SUPER_KEYS
 from estimate_cases import OBSERVATION_KEYS as ESTIMATE_KEYS
 
 SCHEMA = 2
@@ -18,21 +20,23 @@ DEPAN_FLOAT_RELATIVE_TOLERANCE = 1e-5
 
 
 def observation_keys(spec):
+    group = group_for(spec)
     keys = list(ORDINARY_KEYS) + [spec["prefix"] + suffix for suffix in SUPER_KEYS + ANALYSIS_KEYS]
-    if spec.get("phase") in (3, 4, 5, 6, 7):
+    if group in EXTENDED_OBSERVATION_GROUPS:
         keys += ["_Range", "_ColorRange", "_Matrix"]
-    if spec.get("phase") in (5, 6, 7):
+    if group in DEPAN_GROUPS:
         keys += list(DEPAN_KEYS)
-    if spec.get("phase") == 6:
+    if group == "estimate":
         keys += list(ESTIMATE_KEYS)
-    if spec.get("phase") == 7:
+    if group == "stabilise":
         keys += ["DepanStabilise_info"]
     return keys
 
 
 def output_observation_keys(spec):
+    group = group_for(spec)
     keys = observation_keys(spec)
-    if spec.get("phase") == 6:
+    if group == "estimate":
         # Reference outputs may unexpectedly expose private spectra. Observe
         # their names only; never decode or export their payloads. Input keys
         # remain complete because those bytes are our own fixture evidence.
@@ -80,11 +84,12 @@ def validate_snapshot(record):
 
 def validate_result(result, spec, backend):
     """Fail closed: absent, duplicate or truncated observations are not equality."""
+    group = group_for(spec)
     expected_errors = spec.get("expected_output_errors", [])
     error_targets = set()
     for expected in expected_errors:
         if set(expected) != {"member", "frame", "sentinel"} or \
-                spec.get("phase") != 5 or spec.get("operation") != "DepanAnalyse" or \
+                group != "depan" or spec.get("operation") != "DepanAnalyse" or \
                 type(expected["member"]) is not int or type(expected["frame"]) is not int or \
                 not isinstance(expected["sentinel"], str) or not expected["sentinel"] or \
                 [expected["member"], expected["frame"]] not in spec["requests"] or \
@@ -103,7 +108,7 @@ def validate_result(result, spec, backend):
     creation_error = result.get("creation_error")
     if creation_error is not None:
         validate_error(creation_error)
-        if spec.get("phase") not in (2, 3, 4, 5, 6, 7) or result.get("outputs") != [] or result.get("records") != []:
+        if group not in PREPARED_GROUPS or result.get("outputs") != [] or result.get("records") != []:
             raise ValueError("invalid creation failure observation")
     elif len(result.get("outputs", [])) != spec["members"]:
         raise ValueError("wrong output member count")
@@ -119,7 +124,7 @@ def validate_result(result, spec, backend):
                 raise ValueError("error record also contains successful pixels")
         else:
             validate_snapshot(record)
-            if spec.get("phase") in (3, 4, 5, 6, 7):
+            if group in EXTENDED_OBSERVATION_GROUPS:
                 names = record.get("property_names")
                 if not isinstance(names, list) or any(not isinstance(name, str) for name in names) or \
                         names != sorted(set(names)) or \
@@ -130,18 +135,18 @@ def validate_result(result, spec, backend):
         raise ValueError("missing or duplicated source frames")
     for item in inputs:
         validate_snapshot(item)
-    if spec.get("phase") in (2, 3, 4, 5, 6, 7):
+    if group in PREPARED_GROUPS:
         if not result.get("input_video"):
             raise ValueError("missing source video metadata")
-    if spec.get("phase") in (2, 4, 5, 6, 7) or (spec.get("phase") == 3 and spec.get("operation") == "Flow"):
+    if group in AUXILIARY_GROUPS:
         auxiliary = result.get("auxiliary_inputs", [])
-        if spec.get("phase") == 6 and result.get("auxiliary_inputs") != []:
+        if group == "estimate" and result.get("auxiliary_inputs") != []:
             raise ValueError("DepanEstimate requires an explicit empty auxiliary input inventory")
-        if spec.get("phase") == 6:
+        if group == "estimate":
             expected = []
-        elif spec.get("phase") == 7:
+        elif group == "stabilise":
             expected = ["data"]
-        elif spec.get("phase") == 5:
+        elif group == "depan":
             expected = (["vectors"] + (["mask"] if spec["mask"] is not None else [])) \
                 if spec["operation"] == "DepanAnalyse" else ["data"]
         else:
@@ -170,7 +175,7 @@ def validate_result(result, spec, backend):
                 requested.get("sha256") != env["plugin_sha256"] or \
                 requested.get("selection") != "explicit; autoload disabled":
             raise ValueError("explicit reference identity differs from loaded binary")
-    if spec.get("phase") in (5, 6, 7) and spec["params"].get("info"):
+    if group in DEPAN_GROUPS and spec["params"].get("info"):
         renderer = env.get("text_renderer", {})
         if renderer.get("entry") != "text.FrameProps" or \
                 renderer.get("arguments") != dict(props=[spec["operation"] + "_info"]) or \
@@ -224,7 +229,7 @@ def depan_float_observations(reference, candidate, spec, left, right):
     Other fields (including diagnostic text) are still compared exactly.
     """
     kernel = candidate.get("environment", {}).get("kernel", {})
-    if not spec or spec.get("phase") != 5 or spec.get("operation") != "DepanAnalyse" or \
+    if not spec or group_for(spec) != "depan" or spec.get("operation") != "DepanAnalyse" or \
             reference.get("backend") != "mvu" or candidate.get("backend") != "neo" or \
             kernel.get("effective") != "highway" or not kernel.get("target") or \
             kernel["target"] in ("scalar", "SCALAR", "EMU128"):

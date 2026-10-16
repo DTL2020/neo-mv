@@ -1,14 +1,15 @@
-"""Case inventory; phase-one fixtures remain independently importable."""
-from cases import CASES as PHASE_ONE
-from render_cases import CASES as PHASE_TWO
-from mask_cases import CASES as PHASE_THREE
+"""Case inventory; motion fixtures remain independently importable."""
+from motion_cases import CASES as MOTION_CASES
+from render_cases import CASES as RENDER_CASES
+from mask_cases import CASES as MASK_CASES
 from flow_cases import CASES as FLOW_CASES
-from interpolation_cases import CASES as PHASE_FOUR
-from depan_cases import CASES as PHASE_FIVE
-from estimate_cases import CASES as PHASE_SIX
-from stabilise_cases import CASES as PHASE_SEVEN
+from interpolation_cases import CASES as INTERPOLATION_CASES
+from depan_cases import CASES as DEPAN_CASES
+from estimate_cases import CASES as ESTIMATE_CASES
+from stabilise_cases import CASES as STABILISE_CASES
 
-CASES = PHASE_ONE + PHASE_TWO + PHASE_THREE + FLOW_CASES + PHASE_FOUR + PHASE_FIVE + PHASE_SIX + PHASE_SEVEN
+CASES = (MOTION_CASES + RENDER_CASES + MASK_CASES + FLOW_CASES + INTERPOLATION_CASES +
+         DEPAN_CASES + ESTIMATE_CASES + STABILISE_CASES)
 BY_ID = {item["id"]: item for item in CASES}
 if len(BY_ID) != len(CASES):
     raise ValueError("duplicate black-box case ID")

@@ -16,8 +16,9 @@ import sys
 import threading
 import traceback
 
-from cases import build
+from motion_cases import build
 from catalog import BY_ID
+from case_groups import DEPAN_GROUPS, EXTENDED_OBSERVATION_GROUPS, group_for
 import render_cases
 import mask_cases
 import flow_cases
@@ -26,6 +27,12 @@ import depan_cases
 import estimate_cases
 import stabilise_cases
 from protocol import ORDINARY_KEYS, SCHEMA, digest_file, digest_json, observation_keys, output_observation_keys
+
+PREPARED_FIXTURES = {
+    "render": render_cases, "mask": mask_cases, "flow": flow_cases,
+    "interpolation": interpolation_cases, "depan": depan_cases,
+    "estimate": estimate_cases, "stabilise": stabilise_cases,
+}
 
 
 def explicit_plugin_environment(vs):
@@ -153,6 +160,7 @@ def main():
     parser.add_argument("--mvu-version", default="9")
     args = parser.parse_args()
     spec = BY_ID[args.case]
+    group = group_for(spec)
     result = dict(schema=SCHEMA, case_id=args.case, case_sha256=digest_json(spec),
                   backend=args.backend, status="error", stage="environment")
     try:
@@ -195,7 +203,7 @@ def main():
         if explicit_reference:
             result["environment"]["reference_request"] = verify_explicit_plugin(
                 plugin, args.mvu_plugin, args.mvu_plugin_sha256)
-        if spec.get("phase") in (5, 6, 7) and spec["params"].get("info"):
+        if group in DEPAN_GROUPS and spec["params"].get("info"):
             renderer = core.text
             renderer_path = Path(renderer.plugin_path).resolve() if renderer.plugin_path else None
             result["environment"]["text_renderer"] = dict(plugin_path=str(renderer_path) if renderer_path else None,
@@ -206,9 +214,7 @@ def main():
         keys = observation_keys(spec)
         output_keys = output_observation_keys(spec)
         prepared = None
-        fixture = {2: render_cases, 3: mask_cases, 4: interpolation_cases, 5: depan_cases, 6: estimate_cases, 7: stabilise_cases}.get(spec.get("phase"))
-        if spec.get("phase") == 3 and spec.get("operation") == "Flow":
-            fixture = flow_cases
+        fixture = None if group == "motion" else PREPARED_FIXTURES[group]
         if fixture is not None:
             result["stage"] = "input"
             prepared = fixture.prepare(vs, core, spec)
@@ -266,7 +272,7 @@ def main():
             else:
                 with acquired as frame:
                     observation = dict(**result["active_request"], **snapshot(frame, output_keys))
-                    if spec.get("phase") in (3, 4, 5, 6, 7):
+                    if group in EXTENDED_OBSERVATION_GROUPS:
                         # Observe unexpected property presence without decoding
                         # or exporting unknown/private property payloads.
                         observation["property_names"] = sorted(frame.props)
