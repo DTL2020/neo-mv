@@ -2,7 +2,11 @@
 
 #include "core/interpolation/frame.hpp"
 #include "core/interpolation/rate.hpp"
-#include "filters/phase2.hpp"
+#include "filters/support/render_frames.hpp"
+#include "filters/support/analysis_field.hpp"
+#include "kernels/selection.hpp"
+#include <dualsynth/staged_video.hpp>
+#include <memory>
 #if NEO_MV_ENABLE_HIGHWAY
 #include "highway/interpolation.hpp"
 #endif

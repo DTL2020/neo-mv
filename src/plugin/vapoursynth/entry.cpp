@@ -1,4 +1,5 @@
 #include "plugin/bridges.hpp"
+#include "kernels/estimate_profile.hpp"
 #include "neo_mv_version.hpp"
 #include <dualsynth/vapoursynth/video_bridge.hpp>
 #include <climits>

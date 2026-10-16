@@ -1,12 +1,46 @@
 #pragma once
-#include "super_payload.hpp"
+#include "filters/support/super_payload.hpp"
+#include "filters/support/analysis_field.hpp"
+#include "filters/support/runtime.hpp"
+#include "core/motion/analyse.hpp"
+#include "core/motion/recalculate.hpp"
+#include "core/motion/scene_classification.hpp"
+#include "core/motion/super_input.hpp"
 #include "kernels/selection.hpp"
+#include <memory>
 #if NEO_MV_ENABLE_HIGHWAY
 #include "highway/kernels.hpp"
 #include "highway/scene.hpp"
 #endif
 
 namespace neo_mv::ds2 {
+inline MetricConfig motion_metric(Params p) {
+  const auto optional = [&](const char* key) -> std::optional<double> {
+    if (!p.present(key)) return {};
+    return unwrap(p.values.get_double(key, 0));
+  };
+  auto name = unwrap(p.values.get_string("metric", "sad"));
+  if (p.present("satd")) {
+    const char* alias = p.boolean("satd", false) ? "satd" : "sad";
+    require(!p.present("metric") || name == alias, "satd conflicts with metric");
+    name = alias;
+  }
+  return make_metric_config(name,
+                            optional("metric_weight"), optional("metric_threshold"));
+}
+template <class T>
+std::vector<SamplingFrames<T>> sample_frames(const FrameSuper<T>& a, const FrameSuper<T>& b, bool chroma) {
+  validate_super_pair(a.plan, b.plan);
+  auto geometry = super_sampling_geometry(a.plan, chroma);
+  std::vector<SamplingFrames<T>> result(geometry.size());
+  for (std::size_t l = 0; l < geometry.size(); ++l)
+    for (int k = 0; k < (geometry[l].chroma ? 3 : 1); ++k) {
+      result[l].current[k] = a.phase(k, int(l));
+      for (int phase = 0; phase < geometry[l].pel * geometry[l].pel; ++phase)
+        result[l].reference[k][phase] = b.phase(k, int(l), phase);
+    }
+  return result;
+}
 template <class T>
 SuperPlan<T> super_plan(const ds::VideoInitContext& ctx) {
   const Params args{*ctx.params};
@@ -40,12 +74,12 @@ SuperPlan<T> super_plan(const ds::VideoInitContext& ctx) {
           external};
 }
 template <class T, class Kernels>
-struct SuperRuntime final : Runtime {
+struct SuperRuntime final : OrdinaryRuntime {
   const SuperPlan<T> plan;
   const std::string prefix;
   std::optional<ds::VideoInputInfo> external;
   explicit SuperRuntime(ds::VideoInitContext& ctx)
-      : Runtime(ctx.inputs[0]), plan(super_plan<T>(ctx)), prefix(Params{*ctx.params}.prefix()) {
+      : OrdinaryRuntime(ctx.inputs[0]), plan(super_plan<T>(ctx)), prefix(Params{*ctx.params}.prefix()) {
     if (ctx.inputs.size() == 2)
       external = ctx.inputs[1];
     for (int k = 0; k < plan.geometry().plane_count; ++k)
@@ -112,7 +146,7 @@ inline void target_axes(AnalysisMetadata& m, Params args) {
   m.blocks_y = geometry_detail::dimension((std::int64_t(m.real_height) - o[1] + sy - 1) / sy);
 }
 template <class T, class Kernels>
-struct AnalyseRuntime final : Runtime {
+struct AnalyseRuntime final : OrdinaryRuntime {
   std::string prefix;
   SuperPlan<T> plan;
   AnalyseControls controls;
@@ -120,7 +154,7 @@ struct AnalyseRuntime final : Runtime {
   std::vector<AnalysisLayer> layers;
   std::optional<bool> tff;
   AnalyseRuntime(ds::VideoInitContext& ctx, const FrameSuper<T>& first)
-      : Runtime(ctx.inputs[0]), prefix(Params{*ctx.params}.prefix()), plan(first.plan) {
+      : OrdinaryRuntime(ctx.inputs[0]), prefix(Params{*ctx.params}.prefix()), plan(first.plan) {
     const Params args{*ctx.params};
     const bool chroma = args.boolean("chroma", true) && plan.params().chroma;
     controls = analyse_controls(args, plan.params().pel);
@@ -163,7 +197,7 @@ struct AnalyseRuntime final : Runtime {
   }
 };
 template <class T, class Kernels>
-struct RecalculateRuntime final : Runtime {
+struct RecalculateRuntime final : OrdinaryRuntime {
   const std::string prefix;
   SuperPlan<T> plan;
   AnalysisMetadata old_metadata, target;
@@ -172,7 +206,7 @@ struct RecalculateRuntime final : Runtime {
   bool fields;
   std::optional<bool> tff;
   RecalculateRuntime(ds::VideoInitContext& ctx, const FrameSuper<T>& first)
-      : Runtime(ctx.inputs[0]), prefix(Params{*ctx.params}.prefix()), plan(first.plan) {
+      : OrdinaryRuntime(ctx.inputs[0]), prefix(Params{*ctx.params}.prefix()), plan(first.plan) {
     const Params args{*ctx.params};
     auto old = frame(*ctx.frames, 1, 0);
     auto field = read_field(old, prefix, false);
@@ -233,11 +267,11 @@ struct RecalculateRuntime final : Runtime {
     write_field(properties(ctx.dst), output, prefix);
   }
 };
-struct SceneRuntime final : Runtime {
+struct SceneRuntime final : OrdinaryRuntime {
   std::string prefix;
   SceneClassifier classifier;
   SceneRuntime(ds::VideoInitContext& ctx, AnalysisMetadata metadata)
-      : Runtime(ctx.inputs[0]), prefix(Params{*ctx.params}.prefix()),
+      : OrdinaryRuntime(ctx.inputs[0]), prefix(Params{*ctx.params}.prefix()),
         classifier(scene_descriptor(metadata), unwrap(ctx.params->get_int64("thscd1", 400)),
                    unwrap(ctx.params->get_double("thscd2", 51.0))) {}
   ds::VideoRequestPattern pattern(int) const override { return ds::VideoRequestPattern::StrictSpatial; }
@@ -270,10 +304,10 @@ struct Filter {
   static constexpr ds::OutputOrigin output_origin = ds::OutputOrigin::copy_from_input(0);
   static constexpr bool needs_output_pixel_access = false;
   struct State {
-    std::shared_ptr<const Runtime> runtime;
+    std::shared_ptr<const OrdinaryRuntime> runtime;
   };
   template <class T, class Kernels>
-  static std::shared_ptr<const Runtime> make_with_kernels(ds::VideoInitContext& ctx) {
+  static std::shared_ptr<const OrdinaryRuntime> make_with_kernels(ds::VideoInitContext& ctx) {
     if constexpr (Op == Operation::Super)
       return std::make_shared<SuperRuntime<T, Kernels>>(ctx);
     else {
@@ -287,7 +321,7 @@ struct Filter {
     }
   }
   template <class T>
-  static std::shared_ptr<const Runtime> make(ds::VideoInitContext& ctx) {
+  static std::shared_ptr<const OrdinaryRuntime> make(ds::VideoInitContext& ctx) {
 #if NEO_MV_ENABLE_HIGHWAY
     if (selected_backend() == KernelBackend::highway)
       return make_with_kernels<T, HighwayKernels<T>>(ctx);
@@ -303,7 +337,7 @@ struct Filter {
             : Op == Operation::Analyse ? count == 1
                                        : count == 2,
             "incorrect input node count");
-    std::shared_ptr<const Runtime> runtime;
+    std::shared_ptr<const OrdinaryRuntime> runtime;
     if constexpr (Op == Operation::SCDetection) {
       auto first = frame(*ctx.frames, 1, 0);
       auto metadata = read_field(first, Params{*ctx.params}.prefix(), false);

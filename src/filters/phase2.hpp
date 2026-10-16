@@ -1,19 +1,16 @@
 #pragma once
 
-#include "filters/super_payload.hpp"
+#include "filters/support/render_frames.hpp"
+#include "filters/support/analysis_field.hpp"
 #include "core/render/frame.hpp"
 #include "kernels/selection.hpp"
 #if NEO_MV_ENABLE_HIGHWAY
 #include "highway/render_ops.hpp"
 #endif
 #include <dualsynth/staged_video.hpp>
+#include <memory>
 
 namespace neo_mv::ds2 {
-template <class T>
-RenderDestination<T> fresh_render_destination(ds::VideoProcessContext& ctx) {
-  return render_frame_planes<T>(ctx.dst);
-}
-
 inline CompensateParameters compensate_parameters(const ds::ParamValues& values) {
   const Params p{values};
   return {unwrap(values.get_int64("thsad", 10000)),
@@ -48,26 +45,6 @@ inline DegrainParameters degrain_parameters(const ds::ParamValues& values, std::
   p.thscd2 = unwrap(values.get_double("thscd2", 51));
   return p;
 }
-inline RenderVideo render_video(const ds::VideoInputInfo& in) {
-  return {in.width,
-          in.height,
-          ds::bits_per_sample(in.format.sample_format),
-          in.format.color_family == ds::ColorFamily::Yuv,
-          1 << in.format.subsampling_w,
-          1 << in.format.subsampling_h,
-          in.num_frames};
-}
-template <class T>
-RenderImage<T> render_image(const FrameSuper<T>& source) {
-  RenderImage<T> result{&source.plan, {}};
-  for (int k = 0; k < source.plan.geometry().plane_count; ++k) {
-    result.planes[k].pel = source.plan.params().pel;
-    for (int a = 0; a < result.planes[k].pel * result.planes[k].pel; ++a)
-      result.planes[k].planes[a] = source.phase(k, 0, a);
-  }
-  return result;
-}
-
 struct RenderRequest {
   int stage = 0;
   std::vector<AnalysisField> fields;

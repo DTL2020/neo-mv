@@ -1,5 +1,12 @@
 #pragma once
-#include "filters/depan.hpp"
+#include "filters/support/depan_properties.hpp"
+#include "filters/support/frame_planes.hpp"
+#include "core/depan/sampling.hpp"
+#include "kernels/selection.hpp"
+#include <dualsynth/staged_video.hpp>
+#if NEO_MV_ENABLE_HIGHWAY
+#include "highway/depan.hpp"
+#endif
 #include "core/depan/stabilise_layers.hpp"
 #include <map>
 

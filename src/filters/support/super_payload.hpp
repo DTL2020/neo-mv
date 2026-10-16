@@ -1,5 +1,10 @@
 #pragma once
-#include "common.hpp"
+#include "filters/support/host.hpp"
+#include "filters/support/frame_planes.hpp"
+#include "core/motion/analysis_field.hpp"
+#include "core/super/pyramid.hpp"
+#include <cstring>
+#include <memory>
 
 namespace neo_mv::ds2 {
 inline std::string descriptor_key(const std::string& prefix) {
@@ -164,17 +169,4 @@ public:
   FrameSuper& operator=(FrameSuper&&) = delete;
   span2d::Plane<const T> phase(int k, int l, int a = 0) const { return planes_.at(k).at(l).at(a); }
 };
-template <class T>
-std::vector<SamplingFrames<T>> sample_frames(const FrameSuper<T>& a, const FrameSuper<T>& b, bool chroma) {
-  validate_super_pair(a.plan, b.plan);
-  auto geometry = super_sampling_geometry(a.plan, chroma);
-  std::vector<SamplingFrames<T>> result(geometry.size());
-  for (std::size_t l = 0; l < geometry.size(); ++l)
-    for (int k = 0; k < (geometry[l].chroma ? 3 : 1); ++k) {
-      result[l].current[k] = a.phase(k, int(l));
-      for (int phase = 0; phase < geometry[l].pel * geometry[l].pel; ++phase)
-        result[l].reference[k][phase] = b.phase(k, int(l), phase);
-    }
-  return result;
-}
 } // namespace neo_mv::ds2

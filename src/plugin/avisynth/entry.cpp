@@ -1,4 +1,5 @@
 #include "plugin/bridges.hpp"
+#include "kernels/estimate_profile.hpp"
 #include <avisynth.h>
 #include <dualsynth/avisynth/video_bridge.hpp>
 

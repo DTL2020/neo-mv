@@ -1,7 +1,10 @@
 #pragma once
 
 #include "core/mask/frame.hpp"
-#include "filters/common.hpp"
+#include "filters/support/analysis_field.hpp"
+#include "filters/support/frame_planes.hpp"
+#include "filters/support/runtime.hpp"
+#include <memory>
 #include "kernels/selection.hpp"
 #if NEO_MV_ENABLE_HIGHWAY
 #include "highway/mask.hpp"
@@ -16,13 +19,13 @@ inline MaskParameters mask_parameters(const ds::ParamValues& values) {
 }
 
 template <class T, class Kernels>
-class MaskRuntime final : public Runtime {
+class MaskRuntime final : public OrdinaryRuntime {
   std::string prefix_;
   MaskFramePlan<T, DecodedFieldKernels<Kernels>> plan_;
 
 public:
   MaskRuntime(ds::VideoInitContext& ctx, MaskKind kind, AnalysisMetadata metadata)
-      : Runtime(ctx.inputs[0]), prefix_(Params{*ctx.params}.prefix()),
+      : OrdinaryRuntime(ctx.inputs[0]), prefix_(Params{*ctx.params}.prefix()),
         plan_(kind, metadata, source.num_frames, mask_parameters(*ctx.params)) {}
   ds::VideoRequestPattern pattern(int) const override { return ds::VideoRequestPattern::StrictSpatial; }
   void request(ds::VideoRequestContext& ctx) const override { ctx.request_frame(0, ctx.output_frame); }
@@ -45,10 +48,10 @@ struct MaskFilter {
   static constexpr ds::HostRequirements host_requirements{true, 0, 0};
   static constexpr ds::OutputOrigin output_origin = ds::OutputOrigin::fresh_without_props();
   struct State {
-    std::shared_ptr<const Runtime> runtime;
+    std::shared_ptr<const OrdinaryRuntime> runtime;
   };
   template <class T>
-  static std::shared_ptr<const Runtime> make(ds::VideoInitContext& ctx, const AnalysisMetadata& metadata) {
+  static std::shared_ptr<const OrdinaryRuntime> make(ds::VideoInitContext& ctx, const AnalysisMetadata& metadata) {
 #if NEO_MV_ENABLE_HIGHWAY
     if (selected_backend() == KernelBackend::highway)
       return std::make_shared<MaskRuntime<T, HighwayMaskKernels<T>>>(ctx, Kind, metadata);
@@ -63,7 +66,7 @@ struct MaskFilter {
     const auto first = read_field(frame(*ctx.frames, 0, 0), Params{*ctx.params}.prefix(), false);
     require(first.state != FieldState::invalid_metadata, "invalid mask creation analysis metadata");
     const auto& m = first.metadata;
-    std::shared_ptr<const Runtime> runtime;
+    std::shared_ptr<const OrdinaryRuntime> runtime;
     if (m.bits == 8)
       runtime = make<std::uint8_t>(ctx, m);
     else if (m.bits == 32)

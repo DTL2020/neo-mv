@@ -1,25 +1,17 @@
 #pragma once
 
 #include <dualsynth/video_filter.hpp>
-#include "filters/frame_planes.hpp"
-#include "core/motion/analyse.hpp"
-#include "core/motion/recalculate.hpp"
-#include "core/motion/scene_classification.hpp"
-#include "core/motion/super_input.hpp"
-#include <cstring>
-#include <memory>
+#include <algorithm>
+#include <array>
+#include <cstdint>
 #include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <variant>
+#include <vector>
 
 namespace neo_mv::ds2 {
-// These host runtimes own fields produced by the fully validating decoder.
-// Request state is not modified between eligibility and pixel processing.
-// Standalone core/kernel APIs continue to use validating counters.
-template <class Kernels>
-struct DecodedFieldKernels : Kernels {
-  static constexpr auto scene_count = Kernels::scene_count_validated;
-};
-
 inline void require(bool ok, const char* message) {
   if (!ok)
     throw std::invalid_argument(message);
@@ -57,20 +49,6 @@ struct Params {
   }
   std::optional<bool> tff() const { return present("tff") ? std::optional<bool>(boolean("tff", false)) : std::nullopt; }
 };
-inline MetricConfig motion_metric(Params p) {
-  const auto optional = [&](const char* key) -> std::optional<double> {
-    if (!p.present(key)) return {};
-    return unwrap(p.values.get_double(key, 0));
-  };
-  auto name = unwrap(p.values.get_string("metric", "sad"));
-  if (p.present("satd")) {
-    const char* alias = p.boolean("satd", false) ? "satd" : "sad";
-    require(!p.present("metric") || name == alias, "satd conflicts with metric");
-    name = alias;
-  }
-  return make_metric_config(name,
-                            optional("metric_weight"), optional("metric_threshold"));
-}
 inline ds::VideoOutputInfo output_info(const ds::VideoInputInfo& in) {
   return {in.width, in.height, in.num_frames, in.format, in.fps};
 }
@@ -125,41 +103,6 @@ inline void validate_frame(const ds::VideoFrameView& f, const ds::VideoInputInfo
             "frame dimensions changed");
   }
 }
-inline AnalysisField read_field(const ds::RequestedVideoFrame& frame, const std::string& prefix, bool vectors = true) {
-  const auto& props = properties(frame.frame);
-  std::map<std::string, std::vector<std::int64_t>> storage;
-  auto read = [&](const std::string& key) -> IntegerPropertyView {
-    const auto info = props.inspect(key);
-    if (!info)
-      return {};
-    if (info->type != ds::PropertyType::Integer)
-      return {false, info->count, nullptr};
-    if (info->count == 0)
-      return {true, 0, nullptr};
-    auto found = storage.find(key);
-    if (found == storage.end())
-      found = storage.emplace(key, property_array<std::int64_t>(props, key)).first;
-    require(found->second.size() == info->count, "analysis property count changed during read");
-    return {true, info->count, found->second.data()};
-  };
-  auto metadata = read_analysis_field(read, false, prefix);
-  if (!vectors || metadata.state == FieldState::invalid_metadata)
-    return metadata;
-  // Inspect both lengths before materializing either array, including arrays
-  // of host object types which DS2 intentionally cannot read as values.
-  const auto v = props.inspect(prefix + "AnalysisVectors"), s = props.inspect(prefix + "AnalysisSAD");
-  const auto count = field_detail::count(metadata.metadata);
-  if (!v || !s || v->count != count || s->count != count)
-    return metadata;
-  return read_analysis_field(read, true, prefix);
-}
-inline void write_field(ds::FrameProperties& props, const AnalysisField& field, const std::string& prefix) {
-  auto encoded = encode_analysis_field(field, prefix);
-  props.erase(prefix + "AnalysisVectors");
-  props.erase(prefix + "AnalysisSAD");
-  for (const auto& entry : encoded)
-    props.set(entry.first, entry.second);
-}
 inline bool parity(const ds::VideoFrameView& frame, int n, std::optional<bool> tff) {
   if (tff)
     return *tff ^ ((n & 1) != 0);
@@ -167,21 +110,4 @@ inline bool parity(const ds::VideoFrameView& frame, int n, std::optional<bool> t
   require(!values.empty(), "fields requires readable _Field");
   return values[0] != 0;
 }
-inline bool same_metadata(AnalysisMetadata a, AnalysisMetadata b, bool compare_delta = true) {
-  for (auto field : field_detail::scalars) {
-    if (!compare_delta && field.member == &AnalysisMetadata::delta)
-      continue;
-    if (a.*field.member != b.*field.member)
-      return false;
-  }
-  return a.chroma == b.chroma;
-}
-struct Runtime {
-  ds::VideoInputInfo source;
-  explicit Runtime(ds::VideoInputInfo in) : source(in) {}
-  virtual ~Runtime() = default;
-  virtual void request(ds::VideoRequestContext&) const = 0;
-  virtual void process(ds::VideoProcessContext&) const = 0;
-  virtual ds::VideoRequestPattern pattern(int) const { return ds::VideoRequestPattern::General; }
-};
 } // namespace neo_mv::ds2

@@ -1,5 +1,10 @@
 #pragma once
-#include "filters/depan.hpp"
+#include "filters/support/depan_properties.hpp"
+#include "filters/support/frame_planes.hpp"
+#include "core/depan/diagnostics.hpp"
+#include "kernels/estimate_profile.hpp"
+#include <dualsynth/staged_video.hpp>
+#include <memory>
 #include "core/depan/estimate_fft.hpp"
 #include "core/depan/estimate_geometry.hpp"
 #include "core/depan/estimate_image.hpp"
@@ -15,10 +20,6 @@
 #endif
 
 namespace neo_mv::ds2 {
-inline depan::estimate::FftProfile estimate_fft_profile() {
-  return selected_backend() == KernelBackend::highway ? depan::estimate::FftProfile::native
-                                                      : depan::estimate::FftProfile::scalar;
-}
 struct DepanEstimateFilter {
   static constexpr const char* name = "DepanEstimate";
   static constexpr int input_count = ds::dynamic_video_inputs;
