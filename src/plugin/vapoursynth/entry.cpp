@@ -47,11 +47,11 @@ int integer(const VSMap* in, const char* key, int fallback, const VSAPI* api) {
   require(!error, "invalid integer parameter");
   return saturate(value);
 }
-template <Operation Op>
+template <MotionOperation Op>
 void VS_CC create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* api) {
   try {
     check_prefix(in, api);
-    ds::vapoursynth::create_video_filter_bridge<Bridge<Op>>(in, out, core, api);
+    ds::vapoursynth::create_video_filter_bridge<MotionBridge<Op>>(in, out, core, api);
   } catch (const std::exception& e) {
     api->mapSetError(out, e.what());
   } catch (...) {
@@ -86,7 +86,7 @@ void VS_CC many(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* a
           throw std::runtime_error("AnalyseMany member[" + std::to_string(index) + "]: " + e.what());
         }
       }
-    ds::vapoursynth::create_video_filter_bundle<Bridge<Operation::Analyse>>({calls.data(), calls.size()}, out, core,
+    ds::vapoursynth::create_video_filter_bundle<MotionBridge<MotionOperation::Analyse>>({calls.data(), calls.size()}, out, core,
                                                                             api);
   } catch (const std::exception& e) {
     api->mapSetError(out, e.what());
@@ -117,7 +117,7 @@ void VS_CC recalculate(const VSMap* in, VSMap* out, void*, VSCore* core, const V
         throw std::runtime_error("Recalculate member[" + std::to_string(i) + "]: " + e.what());
       }
     }
-    ds::vapoursynth::create_video_filter_bundle<Bridge<Operation::Recalculate>>({calls.data(), calls.size()}, out, core,
+    ds::vapoursynth::create_video_filter_bundle<MotionBridge<MotionOperation::Recalculate>>({calls.data(), calls.size()}, out, core,
                                                                                 api);
   } catch (const std::exception& e) {
     api->mapSetError(out, e.what());
@@ -219,11 +219,11 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
   using neo_mv::MaskKind;
   api->configPlugin("org.neofilters.neo_mv", "neo_mv", "neo-mv",
                     VS_MAKE_VERSION(NEO_MV_VERSION_MAJOR, NEO_MV_VERSION_MINOR), VAPOURSYNTH_API_VERSION, 0, plugin);
-  api->registerFunction("Super", super_signature, "clip:vnode;", create<Operation::Super>, nullptr, plugin);
-  api->registerFunction("Analyse", analyse_signature, "clip:vnode;", create<Operation::Analyse>, nullptr, plugin);
+  api->registerFunction("Super", super_signature, "clip:vnode;", create<MotionOperation::Super>, nullptr, plugin);
+  api->registerFunction("Analyse", analyse_signature, "clip:vnode;", create<MotionOperation::Analyse>, nullptr, plugin);
   api->registerFunction("AnalyseMany", many_signature, "clip:vnode[];", many, nullptr, plugin);
   api->registerFunction("Recalculate", recalculate_signature, "clip:vnode[];", recalculate, nullptr, plugin);
-  api->registerFunction("SCDetection", scene_signature, "clip:vnode;", create<Operation::SCDetection>, nullptr, plugin);
+  api->registerFunction("SCDetection", scene_signature, "clip:vnode;", create<MotionOperation::SCDetection>, nullptr, plugin);
   api->registerFunction("Compensate", compensate_signature, "clip:vnode;", create_render<false>, nullptr, plugin);
   api->registerFunction("Flow", flow_signature, "clip:vnode;", create_flow, nullptr, plugin);
   api->registerFunction("FlowInter", flow_inter_signature, "clip:vnode;", create_temporal<TemporalKind::Inter>, nullptr,

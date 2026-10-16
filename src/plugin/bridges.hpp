@@ -1,6 +1,6 @@
 #pragma once
-#include "filters/phase1.hpp"
-#include "filters/phase2.hpp"
+#include "filters/motion_pipeline.hpp"
+#include "filters/render.hpp"
 #include "filters/mask.hpp"
 #include "filters/flow.hpp"
 #include "filters/interpolation.hpp"
@@ -12,13 +12,13 @@ namespace neo_mv::ds2 {
 inline ds::ParamSpec parameter(const char* name, ds::ParamType type, bool required = false, bool array = false) {
   return {name, type, {}, required, array, true, false};
 }
-inline ds::FilterDescriptor descriptor(Operation op) {
+inline ds::FilterDescriptor motion_descriptor(MotionOperation op) {
   using P = ds::ParamType;
   ds::FilterDescriptor d;
   auto add = [&](const char* n, P t = P::Integer, bool required = false, bool array = false) {
     d.params.push_back(parameter(n, t, required, array));
   };
-  if (op == Operation::Super) {
+  if (op == MotionOperation::Super) {
     d.name = "Super";
     add("clip", P::Clip, true);
     add("blksize", P::Integer, true, true);
@@ -29,7 +29,7 @@ inline ds::FilterDescriptor descriptor(Operation op) {
     add("rfilter");
     add("pel");
     add("pelclip", P::Clip);
-  } else if (op == Operation::Analyse) {
+  } else if (op == MotionOperation::Analyse) {
     d.name = "Analyse";
     add("super", P::Clip, true);
     add("blksize", P::Integer, false, true);
@@ -51,7 +51,7 @@ inline ds::FilterDescriptor descriptor(Operation op) {
     add("fields", P::Boolean);
     add("tff", P::Boolean);
     add("metric", P::String);
-  } else if (op == Operation::Recalculate) {
+  } else if (op == MotionOperation::Recalculate) {
     d.name = "Recalculate";
     add("super", P::Clip, true);
     add("vectors", P::Clip, true);
@@ -76,7 +76,7 @@ inline ds::FilterDescriptor descriptor(Operation op) {
     add("thscd2", P::Float);
   }
   add("prefix", P::String);
-  if (op == Operation::Analyse || op == Operation::Recalculate) {
+  if (op == MotionOperation::Analyse || op == MotionOperation::Recalculate) {
     add("metric_weight", P::Float);
     add("metric_threshold", P::Float);
     add("satd", P::Boolean);
@@ -101,13 +101,13 @@ inline constexpr char recalculate_signature[] =
     "opt;mvlambda:int:opt;chroma:int:opt;pnew:int:opt;overlap:int[]:opt:empty;meander:int:opt;fields:int:opt;tff:int:"
     "opt;metric:data:opt;prefix:data:opt;metric_weight:float:opt;metric_threshold:float:opt;satd:int:opt;";
 inline constexpr char scene_signature[] = "clip:vnode;vectors:vnode;thscd1:int:opt;thscd2:float:opt;prefix:data:opt;";
-template <Operation Op>
-struct Bridge {
-  using Core = Filter<Op>;
+template <MotionOperation Op>
+struct MotionBridge {
+  using Core = MotionFilter<Op>;
   static constexpr const char* vs_name = Core::name;
-  static constexpr const char* vs_signature = Op == Operation::Super         ? super_signature
-                                              : Op == Operation::Analyse     ? analyse_signature
-                                              : Op == Operation::Recalculate ? recalculate_signature
+  static constexpr const char* vs_signature = Op == MotionOperation::Super         ? super_signature
+                                              : Op == MotionOperation::Analyse     ? analyse_signature
+                                              : Op == MotionOperation::Recalculate ? recalculate_signature
                                                                              : scene_signature;
   // The AviSynth adapter supplies its own enabled descriptor and registration names.
   static constexpr const char* avs_name = "";
@@ -117,7 +117,7 @@ struct Bridge {
   static constexpr const char* avs_format_error = vs_format_error;
   static constexpr std::size_t parity_source_index = 0;
   static constexpr bool forward_audio = false;
-  static ds::FilterDescriptor descriptor() { return ds2::descriptor(Op); }
+  static ds::FilterDescriptor descriptor() { return ds2::motion_descriptor(Op); }
   static bool accepts_video_format(const ds::VideoFormat& format) {
     auto supported = ds::is_supported_video_format(format);
     return supported.has_value() && supported.value();
@@ -132,7 +132,7 @@ inline constexpr char degrain_signature[] =
     "planes:int[]:opt:empty;limit:float[]:opt:empty;thscd1:int:opt;thscd2:float:opt;weights:int[]:opt:empty;prefix:"
     "data:opt;";
 template <bool Degrain>
-struct RenderBridge : Bridge<Operation::Super> {
+struct RenderBridge : MotionBridge<MotionOperation::Super> {
   using Core = RenderFilter<Degrain>;
   static constexpr const char* vs_name = Core::name;
   static constexpr const char* vs_signature = Degrain ? degrain_signature : compensate_signature;
@@ -171,7 +171,7 @@ inline constexpr char mask_signature[] =
 inline constexpr char flow_signature[] =
     "clip:vnode;super:vnode;vectors:vnode;time:float:opt;fields:int:opt;thscd1:int:opt;"
     "thscd2:float:opt;tff:int:opt;prefix:data:opt;";
-struct FlowBridge : Bridge<Operation::Super> {
+struct FlowBridge : MotionBridge<MotionOperation::Super> {
   using Core = FlowFilter;
   static constexpr const char* vs_name = Core::name;
   static constexpr const char* vs_signature = flow_signature;
@@ -198,7 +198,7 @@ inline constexpr char flow_fps_signature[] =
 inline constexpr char flow_blur_signature[] = "clip:vnode;super:vnode;vectors:vnode[];blur:float:opt;prec:int:opt;"
                                               "thscd1:int:opt;thscd2:float:opt;prefix:data:opt;";
 template <TemporalKind Kind>
-struct TemporalBridge : Bridge<Operation::Super> {
+struct TemporalBridge : MotionBridge<MotionOperation::Super> {
   using Core = TemporalFilter<Kind>;
   static constexpr const char* vs_name = Core::name;
   static constexpr const char* vs_signature = Kind == TemporalKind::Inter ? flow_inter_signature
@@ -238,7 +238,7 @@ inline constexpr char depan_compensation_signature[] =
     "clip:vnode;data:vnode;offset:float:opt;subpixel:int:opt;pixaspect:float:opt;matchfields:int:opt;mirror:int:opt;"
     "blur:int:opt;info:int:opt;fields:int:opt;tff:int:opt;";
 template <bool Analyse>
-struct DepanBridge : Bridge<Operation::Super> {
+struct DepanBridge : MotionBridge<MotionOperation::Super> {
   using Core = std::conditional_t<Analyse, DepanAnalysisFilter, DepanCompensationFilter>;
   static constexpr const char* vs_name = Core::name;
   static constexpr const char* vs_signature = Analyse ? depan_analysis_signature : depan_compensation_signature;
@@ -278,7 +278,7 @@ struct DepanBridge : Bridge<Operation::Super> {
 inline constexpr char depan_estimate_signature[] =
     "clip:vnode;trust:float:opt;winx:int:opt;winy:int:opt;wleft:int:opt;wtop:int:opt;dxmax:int:opt;dymax:int:opt;"
     "zoommax:float:opt;stab:float:opt;pixaspect:float:opt;info:int:opt;show:int:opt;fields:int:opt;tff:int:opt;";
-struct DepanEstimateBridge : Bridge<Operation::Super> {
+struct DepanEstimateBridge : MotionBridge<MotionOperation::Super> {
   using Core = DepanEstimateFilter;
   static constexpr const char* vs_name = Core::name;
   static constexpr const char* vs_signature = depan_estimate_signature;
@@ -304,7 +304,7 @@ inline constexpr char depan_stabilise_signature[] =
     "prev:int:opt;next:int:opt;mirror:int:opt;blur:int:opt;dxmax:float:opt;dymax:float:opt;zoommax:float:opt;"
     "rotmax:float:opt;subpixel:int:opt;pixaspect:float:opt;fitlast:int:opt;tzoom:float:opt;info:int:opt;method:int:opt;"
     "fields:int:opt;";
-struct DepanStabiliseBridge : Bridge<Operation::Super> {
+struct DepanStabiliseBridge : MotionBridge<MotionOperation::Super> {
   using Core = DepanStabiliseFilter;
   static constexpr const char* vs_name = Core::name;
   static constexpr const char* vs_signature = depan_stabilise_signature;
@@ -334,7 +334,7 @@ struct DepanStabiliseBridge : Bridge<Operation::Super> {
   }
 };
 template <MaskKind Kind>
-struct MaskBridge : Bridge<Operation::Super> {
+struct MaskBridge : MotionBridge<MotionOperation::Super> {
   using Core = MaskFilter<Kind>;
   static constexpr const char* vs_name = Core::name;
   static constexpr const char* vs_signature = mask_signature;

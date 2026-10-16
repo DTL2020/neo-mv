@@ -79,7 +79,7 @@ AVSValue __cdecl create(AVSValue args, void* user_data, IScriptEnvironment* env)
 }
 
 ds::FilterDescriptor many_descriptor() {
-  auto d = Adapter<Bridge<Operation::Analyse>>::descriptor();
+  auto d = Adapter<MotionBridge<MotionOperation::Analyse>>::descriptor();
   d.params.insert(d.params.begin() + index(d, "prefix"), {"radius", ds::ParamType::Integer});
   return d;
 }
@@ -104,12 +104,12 @@ AVSValue __cdecl many(AVSValue args, void*, IScriptEnvironment* env) {
         members.back()[index(d, "delta")] = AVSValue(r * step * sign);
         calls.push_back(AVSValue(members.back().data(), static_cast<int>(members.back().size())));
       }
-    return av::create_video_filter_bundle<Adapter<Bridge<Operation::Analyse>>>({calls.data(), calls.size()}, env);
+    return av::create_video_filter_bundle<Adapter<MotionBridge<MotionOperation::Analyse>>>({calls.data(), calls.size()}, env);
   });
 }
 
 ds::FilterDescriptor recalculate_descriptor() {
-  auto d = Adapter<Bridge<Operation::Recalculate>>::descriptor();
+  auto d = Adapter<MotionBridge<MotionOperation::Recalculate>>::descriptor();
   d.params[index(d, "vectors")].is_array = true;
   d.params[index(d, "vectors")].avs_array_binding = ds::AvisynthArrayBinding::Native;
   return d;
@@ -133,7 +133,7 @@ AVSValue __cdecl recalculate(AVSValue args, void*, IScriptEnvironment* env) {
       calls.push_back(AVSValue(members.back().data(), static_cast<int>(members.back().size())));
     }
     const auto result =
-        av::create_video_filter_bundle<Adapter<Bridge<Operation::Recalculate>>>({calls.data(), calls.size()}, env);
+        av::create_video_filter_bundle<Adapter<MotionBridge<MotionOperation::Recalculate>>>({calls.data(), calls.size()}, env);
     return single ? result[0] : result;
   });
 }
@@ -193,11 +193,11 @@ NEO_MV_AVS_EXPORT const char* __stdcall AvisynthPluginInit3(IScriptEnvironment* 
   using namespace neo_mv::ds2::avs;
   try {
     env->CheckVersion(11);
-    add<Bridge<Operation::Super>>(env);
-    add<Bridge<Operation::Analyse>>(env);
+    add<MotionBridge<MotionOperation::Super>>(env);
+    add<MotionBridge<MotionOperation::Analyse>>(env);
     add(env, "neo_mv_AnalyseMany", many_descriptor(), many);
     add(env, "neo_mv_Recalculate", recalculate_descriptor(), recalculate);
-    add<Bridge<Operation::SCDetection>>(env);
+    add<MotionBridge<MotionOperation::SCDetection>>(env);
     add<RenderBridge<false>>(env);
     add<RenderBridge<true>>(env);
     for (std::intptr_t radius = 1; radius <= 25; ++radius)

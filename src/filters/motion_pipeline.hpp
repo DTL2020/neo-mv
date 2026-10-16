@@ -292,12 +292,12 @@ struct SceneRuntime final : OrdinaryRuntime {
                classifier(field, count));
   }
 };
-enum class Operation { Super, Analyse, Recalculate, SCDetection };
-template <Operation Op>
-struct Filter {
-  static constexpr const char* name = Op == Operation::Super         ? "Super"
-                                      : Op == Operation::Analyse     ? "Analyse"
-                                      : Op == Operation::Recalculate ? "Recalculate"
+enum class MotionOperation { Super, Analyse, Recalculate, SCDetection };
+template <MotionOperation Op>
+struct MotionFilter {
+  static constexpr const char* name = Op == MotionOperation::Super         ? "Super"
+                                      : Op == MotionOperation::Analyse     ? "Analyse"
+                                      : Op == MotionOperation::Recalculate ? "Recalculate"
                                                                      : "SCDetection";
   static constexpr int input_count = ds::dynamic_video_inputs;
   static constexpr ds::HostRequirements host_requirements{true, 0, 0};
@@ -308,13 +308,13 @@ struct Filter {
   };
   template <class T, class Kernels>
   static std::shared_ptr<const OrdinaryRuntime> make_with_kernels(ds::VideoInitContext& ctx) {
-    if constexpr (Op == Operation::Super)
+    if constexpr (Op == MotionOperation::Super)
       return std::make_shared<SuperRuntime<T, Kernels>>(ctx);
     else {
       validate_format(ctx.inputs[0]);
       auto first = frame(*ctx.frames, 0, 0);
       FrameSuper<T> payload(first.frame, ctx.inputs[0], Params{*ctx.params}.prefix());
-      if constexpr (Op == Operation::Analyse)
+      if constexpr (Op == MotionOperation::Analyse)
         return std::make_shared<AnalyseRuntime<T, Kernels>>(ctx, payload);
       else
         return std::make_shared<RecalculateRuntime<T, Kernels>>(ctx, payload);
@@ -333,12 +333,12 @@ struct Filter {
             "host frame services required");
     selected_backend(); // Freeze selection for every graph, including SCDetection.
     const auto count = ctx.inputs.size();
-    require(Op == Operation::Super     ? (count == 1 || count == 2)
-            : Op == Operation::Analyse ? count == 1
+    require(Op == MotionOperation::Super     ? (count == 1 || count == 2)
+            : Op == MotionOperation::Analyse ? count == 1
                                        : count == 2,
             "incorrect input node count");
     std::shared_ptr<const OrdinaryRuntime> runtime;
-    if constexpr (Op == Operation::SCDetection) {
+    if constexpr (Op == MotionOperation::SCDetection) {
       auto first = frame(*ctx.frames, 1, 0);
       auto metadata = read_field(first, Params{*ctx.params}.prefix(), false);
       require(metadata.state != FieldState::invalid_metadata, "invalid scene creation metadata");
