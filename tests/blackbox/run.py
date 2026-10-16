@@ -160,6 +160,7 @@ def main():
                   selected_cases=selected, cases=[])
     report["comparison"] = dict(mode="depan_float_tolerance" if args.depan_float_tolerance else "exact")
     if args.depan_float_tolerance:
+        # Preserve the schema-2 report wording for historical consumers.
         report["comparison"].update(absolute_tolerance=DEPAN_FLOAT_ABSOLUTE_TOLERANCE,
                                      relative_tolerance=DEPAN_FLOAT_RELATIVE_TOLERANCE,
                                      scope="Phase5 DepanAnalyse motion float properties; actual Highway only")

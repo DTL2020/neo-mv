@@ -1,4 +1,4 @@
-"""Phase-6 public specification acceptance using independent synthetic images."""
+"""DepanEstimate public specification acceptance using independent synthetic images."""
 import gc
 import math
 import struct
@@ -333,6 +333,6 @@ diagnostics()
 creation()
 cache_contents()
 concurrency()
-print("neo-mv phase-6 DepanEstimate VS acceptance passed")
+print("neo-mv DepanEstimate VS acceptance passed")
 gc.collect()
 blank(length=1).set_output()

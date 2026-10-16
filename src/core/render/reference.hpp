@@ -63,7 +63,7 @@ RenderCoverage validate_render_geometry(const RenderVideo& clip, const SuperPlan
   return {static_cast<std::int32_t>(width), static_cast<std::int32_t>(height)};
 }
 
-// F and S(z) from Phase 2 reference availability. This is intentionally not the
+// F and S(z) from render reference availability. This is intentionally not the
 // sequential integer area/depth scaling used by motion search. The saved
 // analysis precision is independent of the render sample type.
 class RenderThresholdScale {

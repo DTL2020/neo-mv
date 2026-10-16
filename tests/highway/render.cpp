@@ -178,7 +178,7 @@ int main() {
     fused_composition<std::uint16_t>(16);
     fused_composition<float>(32);
     std::cout << "Highway target: " << neo_mv::simd::detail::target_name() << '\n';
-    std::cout << "Phase2 render sampling typical-path checks passed\n";
+    std::cout << "Render sampling typical-path checks passed\n";
   } catch (const std::exception& e) {
     std::cerr << e.what() << '\n';
     return 1;

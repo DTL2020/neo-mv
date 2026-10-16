@@ -1,4 +1,4 @@
-"""Phase-3 mask acceptance from approved specifications, without a legacy oracle."""
+"""Mask acceptance from approved specifications, without a legacy oracle."""
 import gc
 import math
 
@@ -199,6 +199,6 @@ precision_and_properties()
 fixed_score_and_resizing_examples()
 input_rules()
 interleaved_requests()
-print("neo-mv phase-3 mask VS acceptance passed")
+print("neo-mv mask VS acceptance passed")
 gc.collect()
 blank(1).set_output()

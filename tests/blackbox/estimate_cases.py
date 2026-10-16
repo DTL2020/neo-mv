@@ -1,4 +1,4 @@
-"""Phase-6 public image fixtures; no private spectra or block-vector inputs.
+"""DepanEstimate public image fixtures; no private spectra or block-vector inputs.
 
 Exact raw comparisons intentionally retain FFT-library rounding differences.
 The fixture generates inputs only; it does not manufacture motion properties.
@@ -44,7 +44,7 @@ CASES = [
     case("zero_image", pattern="zero", params=dict(trust=0.0)),
     case("show_integer", params=dict(show=True)),
     case("show_float", format="GRAYS", params=dict(show=True)),
-    # Host text pixels follow the existing Phase-5 renderer-provenance policy.
+    # Host text pixels follow the existing Depan renderer-provenance policy.
     # No fixture-side pixel substitution or numerical tolerance is applied.
     case("info", width=320, height=48, params=dict(info=True)),
     case("unused_nan_copy", format="GRAYS", width=8, nan_position=[7, 3]),

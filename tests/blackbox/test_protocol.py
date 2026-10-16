@@ -497,7 +497,7 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(status, "difference")
             self.assertNotIn("known_differences", detail)
         failed = copy.deepcopy(reference)
-        failed.update(outputs=[], records=[], creation_error=dict(type="Error", message="phase four detail"))
+        failed.update(outputs=[], records=[], creation_error=dict(type="Error", message="interpolation detail"))
         validate_result(failed, spec, "mvu")
         self.assertEqual(compare(failed, failed, spec)[0], "difference")
 

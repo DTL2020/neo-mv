@@ -1,4 +1,4 @@
-"""Phase-7 independent acceptance fixtures derived from public specifications."""
+"""DepanStabilise independent acceptance fixtures derived from public specifications."""
 import concurrent.futures
 import gc
 import vapoursynth as vs
@@ -192,6 +192,6 @@ dependency_boundaries()
 formats_and_creation()
 diagnostics_and_requests()
 numerical_recovery()
-print('neo-mv phase-7 DepanStabilise independent VS acceptance passed')
+print('neo-mv DepanStabilise independent VS acceptance passed')
 gc.collect()
 blank(length=1).set_output()

@@ -1,4 +1,4 @@
-"""Phase-2 host acceptance using approved formulas, without a legacy oracle."""
+"""Block rendering host acceptance using approved formulas, without a legacy oracle."""
 import gc
 import math
 import vapoursynth as vs
@@ -190,7 +190,7 @@ def run():
     constant(mv.Degrain(clip, super, [a, b], thsad=[], thsad2=[], limit=[], planes=[]), 1, 107)
     custom = mv.Super(source, blksize=[8], overlap=[0], pad=[4], pel=1, prefix="Other")
     constant(mv.Compensate(clip, custom, vectors(1, prefix="Other"), prefix="Other"), 1, 140)
-    print("neo-mv phase-2 VS acceptance passed")
+    print("neo-mv VS acceptance passed")
 
 
 run()

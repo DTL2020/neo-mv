@@ -1,4 +1,4 @@
-"""Phase-3 mask fixtures made only from public analysis properties."""
+"""Mask fixtures made only from public analysis properties."""
 
 
 def case(name, operation="VectorLengthMask", *, bits=8, params=None, **extra):

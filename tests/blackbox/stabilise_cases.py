@@ -1,4 +1,4 @@
-"""Phase-7 public motion fixtures, compared without numeric exemptions."""
+"""DepanStabilise public motion fixtures, compared without numeric exemptions."""
 import depan_cases
 
 

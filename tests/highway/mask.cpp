@@ -18,7 +18,7 @@
 namespace {
 void check(bool condition) {
   if (!condition)
-    throw std::runtime_error("phase3 differential mismatch");
+    throw std::runtime_error("mask differential mismatch");
 }
 template <class T>
 struct Buffer {
@@ -345,7 +345,7 @@ int main() {
       guarded_vertical<std::int16_t>();
     }
     hwy::SetSupportedTargetsForTest(0);
-    std::cout << "Phase3 exact differentials passed\n";
+    std::cout << "Mask exact differentials passed\n";
   } catch (const std::exception& e) {
     std::cerr << e.what() << '\n';
     return 1;

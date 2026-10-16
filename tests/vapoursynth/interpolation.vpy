@@ -1,4 +1,4 @@
-"""Phase-4 specification acceptance; no legacy oracle."""
+"""Interpolation specification acceptance; no legacy oracle."""
 import gc
 import math
 import vapoursynth as vs
@@ -190,7 +190,7 @@ def run():
     futures = [node.get_frame_async(n) for node, n in jobs]
     for future in futures:
         future.result().close()
-    print("neo-mv phase-4 temporal VS acceptance passed")
+    print("neo-mv temporal VS acceptance passed")
 
 
 run()

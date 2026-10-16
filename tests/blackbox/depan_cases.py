@@ -1,4 +1,4 @@
-"""Phase-5 fixtures built exclusively from public Analysis and Depan properties."""
+"""Depan fixtures built exclusively from public Analysis and Depan properties."""
 
 MASK_FAILURE_SENTINEL = "blackbox mask dependency failure"
 

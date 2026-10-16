@@ -1,4 +1,4 @@
-"""Phase-3 Flow acceptance from approved specs, without a legacy oracle."""
+"""Flow acceptance from approved specs, without a legacy oracle."""
 import gc
 import math
 import vapoursynth as vs
@@ -160,7 +160,7 @@ def run():
     fails(lambda: mv.Flow(clip, sup, vectors(length=2)))
     custom = super_clip(source, prefix="Other")
     constant(mv.Flow(clip, custom, vectors(prefix="Other"), prefix="Other"), 1, 140)
-    print("neo-mv phase-3 Flow VS acceptance passed")
+    print("neo-mv Flow VS acceptance passed")
 
 
 run()

@@ -1,4 +1,4 @@
-"""Phase-4 public fixtures; backend-private Super payloads never cross paths."""
+"""Interpolation public fixtures; backend-private Super payloads never cross paths."""
 import render_cases
 
 

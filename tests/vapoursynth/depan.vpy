@@ -1,4 +1,4 @@
-"""Phase-5 specification acceptance from public synthetic properties only."""
+"""Depan specification acceptance from public synthetic properties only."""
 import gc
 import math
 import struct
@@ -464,7 +464,7 @@ def run():
     for (node, n), future in zip(jobs, futures):
         with future.result() as frame:
             assert pixels(frame) == expected[(id(node), n)]
-    print("neo-mv phase-5 Depan VS acceptance passed")
+    print("neo-mv Depan VS acceptance passed")
 
 
 run()

@@ -1,4 +1,4 @@
-"""Phase-2 public fixtures. No private Super data is inspected or exchanged."""
+"""Block-rendering public fixtures. No private Super data is inspected or exchanged."""
 
 
 def case(name, operation="compensate", *, format="GRAY8", pel=1, overlap=0, vector=(0, 0),

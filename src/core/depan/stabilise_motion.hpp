@@ -59,8 +59,8 @@ Interval select_interval(int n, int frames, const Parameters& p, const Coefficie
   }
   return {begin, end};
 }
-// Phase 7 deliberately ignores the input h when inverting the similarity
-// model. Keep Phase 5's stricter analysis_inverse admission unchanged.
+// Stabilisation deliberately ignores the input h when inverting the similarity
+// model. Motion analysis retains the stricter analysis_inverse admission.
 inline Transform inverse(Transform t) {
   validate(t);
   t.h = t.u;

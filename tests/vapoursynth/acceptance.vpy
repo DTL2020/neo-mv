@@ -1,4 +1,4 @@
-"""Host acceptance from approved phase-1 formulas; no legacy MV oracle."""
+"""Host acceptance from approved motion-analysis formulas; no legacy MV oracle."""
 import gc
 import importlib.util
 import math
@@ -244,7 +244,7 @@ fails(lambda: mv.Analyse(edit(s, bad_payload)).get_frame(1), "count mismatch")
 # Share only deterministic public fixtures with the black-box suite. This path
 # uses neo-mv alone and checks literal expected results from the approved spec.
 fixture_spec = importlib.util.spec_from_file_location(
-    "search_fixtures", Path(__file__).resolve().parents[1] / "blackbox" / "cases.py")
+    "search_fixtures", Path(__file__).resolve().parents[1] / "blackbox" / "motion_cases.py")
 fixtures = importlib.util.module_from_spec(fixture_spec)
 fixture_spec.loader.exec_module(fixtures)
 for spec in fixtures.SEARCH0_CASES:
